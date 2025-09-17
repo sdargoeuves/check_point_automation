@@ -8,6 +8,7 @@ SSH connections, CLI mode detection, and command execution for Check Point VMs.
 import re
 import time
 from typing import Optional
+import random
 
 import paramiko
 
@@ -25,15 +26,26 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
 
     This class manages SSH connections to Check Point VMs and provides
     methods for CLI mode detection, switching, and command execution.
+    Includes retry logic with exponential backoff and automatic reconnection.
     """
 
-    def __init__(self):
+    def __init__(self, max_retries: int = 3, base_delay: float = 1.0, max_delay: float = 30.0):
         self._ssh_client: Optional[paramiko.SSHClient] = None
         self._shell: Optional[paramiko.Channel] = None
         self._connection_info: Optional[ConnectionInfo] = None
         self._current_cli_mode: CLIMode = CLIMode.UNKNOWN
         self._system_state: CheckPointState = CheckPointState.UNKNOWN
         self._initial_login_output: str = ""
+        
+        # Retry configuration
+        self._max_retries = max_retries
+        self._base_delay = base_delay
+        self._max_delay = max_delay
+        
+        # Session persistence
+        self._last_activity_time = time.time()
+        self._session_timeout = 300  # 5 minutes default timeout
+        self._auto_reconnect = True
 
     def connect(self, connection_info: ConnectionInfo) -> bool:
         """
@@ -83,7 +95,7 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
             logger.info(
                 f"Connected successfully - CLI Mode: {self._current_cli_mode.value}, State: {self._system_state.value}"
             )
-
+            self._last_activity_time = time.time()
             return True
 
         except paramiko.AuthenticationException as e:
@@ -115,9 +127,140 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
         self._system_state = CheckPointState.UNKNOWN
         self._initial_login_output = ""
 
+    def _calculate_retry_delay(self, attempt: int) -> float:
+        """
+        Calculate delay for retry attempt using exponential backoff with jitter.
+        
+        Args:
+            attempt: Current attempt number (0-based)
+            
+        Returns:
+            Delay in seconds
+        """
+        # Exponential backoff: base_delay * (2 ^ attempt)
+        delay = self._base_delay * (2 ** attempt)
+        
+        # Cap at max_delay
+        delay = min(delay, self._max_delay)
+        
+        # Add jitter (±25% of delay)
+        jitter = delay * 0.25 * (2 * random.random() - 1)
+        delay += jitter
+        
+        return max(0.1, delay)  # Minimum 0.1 seconds
+
+    def _execute_with_retry(self, operation_func, *args, **kwargs):
+        """
+        Execute an operation with retry logic and exponential backoff.
+        
+        Args:
+            operation_func: Function to execute
+            *args: Arguments for the function
+            **kwargs: Keyword arguments for the function
+            
+        Returns:
+            Result of the operation
+            
+        Raises:
+            Last exception if all retries fail
+        """
+        last_exception = None
+        
+        for attempt in range(self._max_retries + 1):  # +1 for initial attempt
+            try:
+                result = operation_func(*args, **kwargs)
+                if attempt > 0:
+                    logger.info(f"Operation succeeded on attempt {attempt + 1}")
+                return result
+                
+            except (ConnectionError, paramiko.SSHException, OSError) as e:
+                last_exception = e
+                
+                if attempt < self._max_retries:
+                    delay = self._calculate_retry_delay(attempt)
+                    logger.warning(f"Operation failed (attempt {attempt + 1}/{self._max_retries + 1}): {e}")
+                    logger.info(f"Retrying in {delay:.2f} seconds...")
+                    time.sleep(delay)
+                    
+                    # Try to reconnect if connection was lost
+                    if not self.is_connected():
+                        logger.info("Connection lost, attempting to reconnect...")
+                        try:
+                            self._reconnect()
+                        except Exception as reconnect_error:
+                            logger.warning(f"Reconnection failed: {reconnect_error}")
+                else:
+                    logger.error(f"Operation failed after {self._max_retries + 1} attempts")
+                    
+            except Exception as e:
+                # Don't retry for non-connection related errors
+                logger.error(f"Non-retryable error: {e}")
+                raise e
+        
+        # If we get here, all retries failed
+        raise last_exception
+
+    def _reconnect(self) -> bool:
+        """
+        Attempt to reconnect to the Check Point VM.
+        
+        Returns:
+            True if reconnection successful, False otherwise
+        """
+        if not self._connection_info:
+            logger.error("Cannot reconnect: no connection info stored")
+            return False
+            
+        logger.info("Attempting to reconnect...")
+        
+        try:
+            # Clean up existing connection
+            self.disconnect()
+            
+            # Reconnect
+            success = self.connect(self._connection_info)
+            if success:
+                logger.info("Reconnection successful")
+                return True
+            else:
+                logger.error("Reconnection failed")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Reconnection error: {e}")
+            return False
+
+    def set_auto_reconnect(self, enabled: bool) -> None:
+        """
+        Enable or disable automatic reconnection on session timeout.
+        
+        Args:
+            enabled: Whether to enable auto-reconnection
+        """
+        self._auto_reconnect = enabled
+        logger.debug(f"Auto-reconnect {'enabled' if enabled else 'disabled'}")
+
+    def set_session_timeout(self, timeout_seconds: int) -> None:
+        """
+        Set the session timeout for automatic reconnection.
+        
+        Args:
+            timeout_seconds: Timeout in seconds
+        """
+        self._session_timeout = timeout_seconds
+        logger.debug(f"Session timeout set to {timeout_seconds} seconds")
+
     def is_connected(self) -> bool:
         """Check if connection is active."""
-        return self._ssh_client is not None and self._shell is not None and not self._shell.closed
+        if self._ssh_client is None or self._shell is None or self._shell.closed:
+            return False
+        
+        # Check if session has timed out
+        if self._auto_reconnect and time.time() - self._last_activity_time > self._session_timeout:
+            logger.warning("Session timeout detected, attempting reconnection")
+            return self._reconnect()
+        
+        return True
 
     def detect_state(self) -> CheckPointState:
         """
@@ -179,6 +322,7 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
 
             output = self._read_shell_output(timeout=3)
             output_lower = output.lower()
+            self._last_activity_time = time.time()  # Update activity time
 
             if "invalid command" in output_lower and "bash" in output_lower:
                 # CLISH mode - bash command is invalid
@@ -284,6 +428,7 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
 
                 # Check if we're now in expert mode
                 self._current_cli_mode = self.get_cli_mode()
+                self._last_activity_time = time.time()  # Update activity time
 
                 if self._current_cli_mode == CLIMode.EXPERT:
                     logger.info("Successfully switched to expert mode")
@@ -322,6 +467,7 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
 
             # Check if we're now in clish mode
             self._current_cli_mode = self.get_cli_mode()
+            self._last_activity_time = time.time()  # Update activity time
 
             if self._current_cli_mode == CLIMode.CLISH:
                 logger.info("Successfully switched to clish mode")
@@ -336,7 +482,44 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
 
     def execute_command(self, command: str, mode: Optional[CLIMode] = None) -> CommandResult:
         """
-        Execute command in specified mode.
+        Execute command in specified mode with retry logic.
+
+        Args:
+            command: Command to execute
+            mode: CLI mode to use (None for current mode)
+
+        Returns:
+            Command execution result
+        """
+        return self._execute_with_retry(self._execute_command_internal, command, mode)
+
+    def execute_clish_command(self, command: str) -> CommandResult:
+        """
+        Execute command in CLISH mode with automatic mode switching.
+
+        Args:
+            command: CLISH command to execute
+
+        Returns:
+            Command execution result
+        """
+        return self.execute_command(command, CLIMode.CLISH)
+
+    def execute_expert_command(self, command: str) -> CommandResult:
+        """
+        Execute command in Expert mode with automatic mode switching.
+
+        Args:
+            command: Expert/bash command to execute
+
+        Returns:
+            Command execution result
+        """
+        return self.execute_command(command, CLIMode.EXPERT)
+
+    def _execute_command_internal(self, command: str, mode: Optional[CLIMode] = None) -> CommandResult:
+        """
+        Internal command execution method (used by retry mechanism).
 
         Args:
             command: Command to execute
@@ -373,6 +556,7 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
             output = self._read_shell_output(timeout=10)
 
             execution_time = time.time() - start_time
+            self._last_activity_time = time.time()  # Update activity time
 
             # Determine if command was successful
             # This is a simple heuristic - could be improved

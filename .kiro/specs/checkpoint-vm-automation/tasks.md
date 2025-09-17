@@ -8,13 +8,13 @@
   - _Requirements: 1.1, 5.1, 6.1_
 
 - [ ] 2. Implement connection management and SSH handling
-  - [ ] 2.1 Create SSH connection wrapper with Check Point specific handling
+  - [x] 2.1 Create SSH connection wrapper with Check Point specific handling
     - Write CheckPointConnectionManager class with SSH connection logic
     - Implement connection retry mechanism with exponential backoff
     - Add session persistence and reconnection capabilities
     - _Requirements: 5.1, 5.4, 5.5_
 
-  - [ ] 2.2 Implement CLI mode detection and switching
+  - [x] 2.2 Implement CLI mode detection and switching
     - Write methods to detect current CLI mode (clish vs expert)
     - Implement mode switching functionality with proper authentication
     - Add command execution wrapper that handles mode-specific syntax
