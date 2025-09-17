@@ -1,0 +1,139 @@
+# Check Point VM Automation Configuration Template
+# This file provides a template for configuring Check Point VM automation
+
+# Connection settings
+connection:
+  host: "192.168.1.100"
+  port: 22
+  username: "admin"
+  password: "admin"
+  timeout: 30
+
+# Initial setup configuration
+initial_setup:
+  expert_password: "admin15"
+  admin_password: "admin15"
+  
+  # First-time wizard settings
+  wizard:
+    hostname: "checkpoint-fw01"
+    timezone: "UTC"
+    ntp_servers:
+      - "pool.ntp.org"
+      - "time.google.com"
+    dns_servers:
+      - "1.1.1.1"
+      - "8.8.8.8"
+    domain_name: "ipf.io"
+
+# Network configuration
+network:
+  # Additional interfaces (eth0 is typically management)
+  interfaces:
+    - name: "eth1"
+      ip_address: "10.1.1.1"
+      subnet_mask: "255.255.255.0"
+      description: "Internal network interface"
+      enabled: true
+    
+    - name: "eth2"
+      ip_address: "192.168.100.1"
+      subnet_mask: "255.255.255.0"
+      description: "DMZ network interface"
+      enabled: true
+
+  # OSPF routing configuration
+  ospf:
+    enabled: true
+    router_id: "10.1.1.1"
+    areas:
+      - area_id: "0.0.0.0"
+        area_type: "normal"
+      # - area_id: "0.0.0.1"
+      #   area_type: "normal"
+    
+    networks:
+      - network: "10.1.1.0/24"
+        area_id: "0.0.0.0"
+      - network: "192.168.100.0/24"
+        area_id: "0.0.0.1"
+
+  # LLDP configuration
+  lldp:
+    enabled: true
+    transmit_interval: 30
+    hold_multiplier: 4
+    interfaces:
+      - "eth1"
+      - "eth2"
+
+# Security policy configuration
+security:
+  # Network objects
+  network_objects:
+    - name: "Internal_Network"
+      type: "network"
+      value: "10.1.1.0/24"
+      description: "Internal corporate network"
+    
+    - name: "DMZ_Network"
+      type: "network"
+      value: "192.168.100.0/24"
+      description: "DMZ network"
+    
+    - name: "Web_Server"
+      type: "host"
+      value: "192.168.100.10"
+      description: "Web server in DMZ"
+
+  # Firewall rules
+  firewall_rules:
+    - name: "Allow_Internal_to_DMZ"
+      source: ["Internal_Network"]
+      destination: ["DMZ_Network"]
+      service: ["http", "https"]
+      action: "accept"
+      track: "Log"
+      enabled: true
+      description: "Allow internal users to access DMZ services"
+    
+    - name: "Allow_DMZ_to_Internet"
+      source: ["DMZ_Network"]
+      destination: ["Any"]
+      service: ["http", "https", "dns"]
+      action: "accept"
+      track: "Log"
+      enabled: true
+      description: "Allow DMZ servers to access internet"
+
+# Logging configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  console_output: true
+  log_file: "logs/checkpoint_automation.log"
+
+# Automation backend settings
+automation:
+  backend: "direct"  # direct, nornir, ansible
+  
+  # Nornir specific settings
+  nornir:
+    inventory_file: "inventory/hosts.yaml"
+    config_file: "config/nornir_config.yaml"
+  
+  # Ansible specific settings
+  ansible:
+    inventory_file: "inventory/hosts.ini"
+    playbook_dir: "playbooks/"
+
+# Validation settings
+validation:
+  # Enable idempotency checking
+  check_idempotency: true
+  
+  # Validation timeout in seconds
+  timeout: 300
+  
+  # Retry settings for validation
+  max_retries: 3
+  retry_delay: 5
