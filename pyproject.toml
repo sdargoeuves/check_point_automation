@@ -1,12 +1,71 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "checkpoint-vm-automation"
+version = "0.1.0"
+description = "A comprehensive automation framework for Check Point VM appliances"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.8"
+authors = [{ name = "Check Point Automation Team" }]
+keywords = ["checkpoint", "automation", "networking", "firewall", "security"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Networking",
+    "Topic :: System :: Systems Administration",
+]
+
+dependencies = ["paramiko>=2.11.0", "pyyaml>=6.0", "typing-extensions>=4.0.0"]
+
+[project.optional-dependencies]
+nornir = ["nornir>=3.3.0", "nornir-paramiko>=0.1.0"]
+ansible = ["ansible>=6.0.0"]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.8.0",
+    "ruff>=0.1.0",
+    "mypy>=0.991",
+]
+docs = ["sphinx>=5.0.0", "sphinx-rtd-theme>=1.0.0"]
+all = ["checkpoint-vm-automation[nornir,ansible,dev,docs]"]
+
+[project.scripts]
+checkpoint-automation = "checkpoint_automation.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/your-org/checkpoint-vm-automation"
+Repository = "https://github.com/your-org/checkpoint-vm-automation"
+Issues = "https://github.com/your-org/checkpoint-vm-automation/issues"
+Documentation = "https://checkpoint-vm-automation.readthedocs.io"
+
 [tool.ruff]
 line-length = 120
+
+# Enable ruff's formatter (replaces black)
+format.quote-style = "double"
+format.indent-style = "space"
+format.skip-magic-trailing-comma = false
+format.line-ending = "auto"
+
 lint.select = [
-    "C4", # flake8-comprehensions
-    "D", # pydocstyle
-    "E", # pycodestyle
-    "F", # Pyflakes
-    "I", # isort
-    "PL", # Pylint
+    "C4",  # flake8-comprehensions
+    "D",   # pydocstyle
+    "E",   # pycodestyle
+    "F",   # Pyflakes
+    "I",   # isort
+    "PL",  # Pylint
     "SIM", # flake8-simplify
 ]
 
@@ -36,7 +95,7 @@ lint.ignore = [
     "D415", # First line should end with a period, question mark, or exclamation point.
     # "E501", # Line too long
     "PLR0913", # Too many arguments
-    "SIM115", # Use context handler for opening files
+    "SIM115",  # Use context handler for opening files
 ]
 show-fixes = true
 target-version = "py311"

@@ -13,7 +13,7 @@ from .core.models import CheckPointConfig, CheckPointState, SystemStatus
 
 __all__ = [
     "CheckPointError",
-    "ConnectionError", 
+    "ConnectionError",
     "ConfigurationError",
     "ValidationError",
     "CheckPointConfig",

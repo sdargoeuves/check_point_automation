@@ -9,9 +9,7 @@ import paramiko
 import time
 import re
 from typing import Optional, Dict, Any
-from .models import (
-    ConnectionInfo, CommandResult, CheckPointState, CLIMode, SystemStatus
-)
+from .models import ConnectionInfo, CommandResult, CheckPointState, CLIMode, SystemStatus
 from .interfaces import ConnectionManagerInterface
 from .exceptions import ConnectionError, AuthenticationError, StateError
 from .logging_config import get_logger
@@ -22,11 +20,11 @@ logger = get_logger("checkpoint_automation.connection")
 class CheckPointConnectionManager(ConnectionManagerInterface):
     """
     SSH connection manager for Check Point VMs with CLI mode handling.
-    
+
     This class manages SSH connections to Check Point VMs and provides
     methods for CLI mode detection, switching, and command execution.
     """
-    
+
     def __init__(self):
         self._ssh_client: Optional[paramiko.SSHClient] = None
         self._shell: Optional[paramiko.Channel] = None
@@ -34,28 +32,28 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
         self._current_cli_mode: CLIMode = CLIMode.UNKNOWN
         self._system_state: CheckPointState = CheckPointState.UNKNOWN
         self._initial_login_output: str = ""
-        
+
     def connect(self, connection_info: ConnectionInfo) -> bool:
         """
         Establish SSH connection to Check Point VM.
-        
+
         Args:
             connection_info: Connection parameters
-            
+
         Returns:
             True if connection successful, False otherwise
-            
+
         Raises:
             ConnectionError: If connection fails
             AuthenticationError: If authentication fails
         """
         logger.info(f"Connecting to Check Point VM at {connection_info.host}")
-        
+
         try:
             # Create SSH client
             self._ssh_client = paramiko.SSHClient()
             self._ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            
+
             # Connect
             self._ssh_client.connect(
                 hostname=connection_info.host,
@@ -64,87 +62,82 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
                 password=connection_info.password,
                 timeout=connection_info.timeout,
                 look_for_keys=False,
-                allow_agent=False
+                allow_agent=False,
             )
-            
+
             # Create interactive shell
             self._shell = self._ssh_client.invoke_shell()
             time.sleep(2)  # Wait for shell to initialize
-            
+
             # Read initial output (contains important state information)
             self._initial_login_output = self._read_shell_output(timeout=3)
-            
+
             self._connection_info = connection_info
-            
+
             # Detect initial CLI mode and system state
             self._current_cli_mode = self.get_cli_mode()
             self._system_state = self.detect_state()
-            
+
             logger.info(
-                f"Connected successfully - CLI Mode: {self._current_cli_mode.value}, "
-                f"State: {self._system_state.value}"
+                f"Connected successfully - CLI Mode: {self._current_cli_mode.value}, State: {self._system_state.value}"
             )
-            
+
             return True
-            
+
         except paramiko.AuthenticationException as e:
             logger.error(f"Authentication failed: {e}")
             raise AuthenticationError(f"Authentication failed for {connection_info.host}", {"error": str(e)})
-            
+
         except paramiko.SSHException as e:
             logger.error(f"SSH connection failed: {e}")
             raise ConnectionError(f"SSH connection failed to {connection_info.host}", {"error": str(e)})
-            
+
         except Exception as e:
             logger.error(f"Unexpected connection error: {e}")
             raise ConnectionError(f"Unexpected error connecting to {connection_info.host}", {"error": str(e)})
-    
+
     def disconnect(self) -> None:
         """Close SSH connection."""
         logger.info("Disconnecting from Check Point VM")
-        
+
         if self._shell:
             self._shell.close()
             self._shell = None
-            
+
         if self._ssh_client:
             self._ssh_client.close()
             self._ssh_client = None
-            
+
         self._connection_info = None
         self._current_cli_mode = CLIMode.UNKNOWN
         self._system_state = CheckPointState.UNKNOWN
         self._initial_login_output = ""
-    
+
     def is_connected(self) -> bool:
         """Check if connection is active."""
-        return (
-            self._ssh_client is not None and 
-            self._shell is not None and 
-            not self._shell.closed
-        )
-    
+        return self._ssh_client is not None and self._shell is not None and not self._shell.closed
+
     def detect_state(self) -> CheckPointState:
         """
         Detect current Check Point VM state.
-        
+
         Simple logic:
         - FRESH_INSTALL: First Time Wizard message present
         - EXPERT_PASSWORD_SET: Expert password is set (regardless of wizard message)
         - FULLY_CONFIGURED: No wizard message and expert password is set
-        
+
         Returns:
             Current system state
         """
         if not self.is_connected():
             raise ConnectionError("Not connected to Check Point VM")
-        
+
         logger.debug("Detecting Check Point VM state")
-        
+
         try:
             # Check the initial login output for wizard completion message
-            initial_output = getattr(self, '_initial_login_output', '')
-            
+            initial_output = getattr(self, "_initial_login_output", "")
+
             # Check if we see the first time wizard message
             if "finish the First Time Wizard" in initial_output or "First Time Wizard" in initial_output:
                 logger.debug("Found First Time Wizard message - fresh install")
@@ -153,38 +146,38 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
                 # No wizard message - system is configured
                 logger.debug("No wizard message - system is configured")
                 self._system_state = CheckPointState.FULLY_CONFIGURED
-            
+
             logger.info(f"Detected system state: {self._system_state.value}")
             return self._system_state
-            
+
         except Exception as e:
             logger.warning(f"Could not detect system state: {e}")
             self._system_state = CheckPointState.UNKNOWN
             return self._system_state
-    
+
     def get_cli_mode(self) -> CLIMode:
         """
         Get current CLI mode by testing the 'bash' command.
-        
+
         In CLISH mode: 'bash' returns "Invalid command:'bash'"
         In Expert mode: 'bash' works and changes prompt to [Expert@hostname:0]#
-        
+
         Returns:
             Current CLI mode
         """
         if not self.is_connected():
             raise ConnectionError("Not connected to Check Point VM")
-        
+
         logger.debug("Detecting CLI mode using bash command test")
-        
+
         try:
             # Test with bash command - this is the most reliable way
             self._shell.send("bash\n")
             time.sleep(1)
-            
+
             output = self._read_shell_output(timeout=3)
             output_lower = output.lower()
-            
+
             if "invalid command" in output_lower and "bash" in output_lower:
                 # CLISH mode - bash command is invalid
                 logger.debug("Detected CLISH mode - bash command invalid")
@@ -199,7 +192,7 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
                 self._shell.send("\n")  # Just send newline to get prompt
                 time.sleep(0.5)
                 prompt_output = self._read_shell_output(timeout=2)
-                
+
                 if "[expert@" in prompt_output.lower() and "]#" in prompt_output.lower():
                     logger.debug("Detected Expert mode from prompt pattern")
                     self._current_cli_mode = CLIMode.EXPERT
@@ -209,34 +202,34 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
                 else:
                     logger.warning(f"Could not determine CLI mode from output: {output}")
                     self._current_cli_mode = CLIMode.UNKNOWN
-            
+
             logger.debug(f"Detected CLI mode: {self._current_cli_mode.value}")
             return self._current_cli_mode
-            
+
         except Exception as e:
             logger.warning(f"Could not detect CLI mode: {e}")
             self._current_cli_mode = CLIMode.UNKNOWN
             return self._current_cli_mode
-    
+
     def _check_expert_password_status(self) -> str:
         """
         Check if expert password is set by attempting to switch to expert mode.
-        
+
         Returns:
             "set" if password is set, "not_set" if not set, "unknown" if can't determine
         """
         if not self.is_connected():
             return "unknown"
-        
+
         try:
             # Send expert command
             self._shell.send("expert\n")
             time.sleep(1)
-            
+
             # Read the response
             output = self._read_shell_output(timeout=3)
             output_lower = output.lower()
-            
+
             if "expert password has not been defined" in output_lower:
                 logger.debug("Expert password not set")
                 return "not_set"
@@ -250,7 +243,7 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
             else:
                 logger.debug(f"Unexpected expert command response: {output}")
                 return "unknown"
-                
+
         except Exception as e:
             logger.warning(f"Error checking expert password status: {e}")
             return "unknown"
@@ -258,38 +251,38 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
     def switch_to_expert(self, expert_password: str) -> bool:
         """
         Switch to expert mode.
-        
+
         Args:
             expert_password: Expert mode password
-            
+
         Returns:
             True if successful, False otherwise
         """
         if not self.is_connected():
             raise ConnectionError("Not connected to Check Point VM")
-        
+
         if self._current_cli_mode == CLIMode.EXPERT:
             logger.debug("Already in expert mode")
             return True
-        
+
         logger.info("Switching to expert mode")
-        
+
         try:
             # Send expert command
             self._shell.send("expert\n")
             time.sleep(1)
-            
+
             # Look for password prompt
             output = self._read_shell_output(timeout=3)
-            
+
             if "password" in output.lower():
                 # Send password
                 self._shell.send(f"{expert_password}\n")
                 time.sleep(2)
-                
+
                 # Check if we're now in expert mode
                 self._current_cli_mode = self.get_cli_mode()
-                
+
                 if self._current_cli_mode == CLIMode.EXPERT:
                     logger.info("Successfully switched to expert mode")
                     return True
@@ -299,138 +292,122 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
             else:
                 logger.error("No password prompt received when switching to expert mode")
                 return False
-                
+
         except Exception as e:
             logger.error(f"Error switching to expert mode: {e}")
             return False
-    
+
     def switch_to_clish(self) -> bool:
         """
         Switch to clish mode.
-        
+
         Returns:
             True if successful, False otherwise
         """
         if not self.is_connected():
             raise ConnectionError("Not connected to Check Point VM")
-        
+
         if self._current_cli_mode == CLIMode.CLISH:
             logger.debug("Already in clish mode")
             return True
-        
+
         logger.info("Switching to clish mode")
-        
+
         try:
             # Send exit command to leave expert mode
             self._shell.send("exit\n")
             time.sleep(2)
-            
+
             # Check if we're now in clish mode
             self._current_cli_mode = self.get_cli_mode()
-            
+
             if self._current_cli_mode == CLIMode.CLISH:
                 logger.info("Successfully switched to clish mode")
                 return True
             else:
                 logger.error("Failed to switch to clish mode")
                 return False
-                
+
         except Exception as e:
             logger.error(f"Error switching to clish mode: {e}")
             return False
-    
+
     def execute_command(self, command: str, mode: Optional[CLIMode] = None) -> CommandResult:
         """
         Execute command in specified mode.
-        
+
         Args:
             command: Command to execute
             mode: CLI mode to use (None for current mode)
-            
+
         Returns:
             Command execution result
         """
         if not self.is_connected():
             raise ConnectionError("Not connected to Check Point VM")
-        
+
         start_time = time.time()
         logger.debug(f"Executing command: {command}")
-        
+
         try:
             # Switch to requested mode if specified
             if mode and mode != self._current_cli_mode:
                 if mode == CLIMode.EXPERT:
                     if not self.switch_to_expert(self._connection_info.password):
                         return CommandResult(
-                            command=command,
-                            success=False,
-                            output="",
-                            error="Failed to switch to expert mode"
+                            command=command, success=False, output="", error="Failed to switch to expert mode"
                         )
                 elif mode == CLIMode.CLISH:
                     if not self.switch_to_clish():
                         return CommandResult(
-                            command=command,
-                            success=False,
-                            output="",
-                            error="Failed to switch to clish mode"
+                            command=command, success=False, output="", error="Failed to switch to clish mode"
                         )
-            
+
             # Send command
             self._shell.send(f"{command}\n")
             time.sleep(1)  # Wait for command to start
-            
+
             # Read output with timeout
             output = self._read_shell_output(timeout=10)
-            
+
             execution_time = time.time() - start_time
-            
+
             # Determine if command was successful
             # This is a simple heuristic - could be improved
-            success = not any(error_indicator in output.lower() for error_indicator in [
-                "error", "failed", "invalid", "not found", "permission denied"
-            ])
-            
-            result = CommandResult(
-                command=command,
-                success=success,
-                output=output,
-                execution_time=execution_time
+            success = not any(
+                error_indicator in output.lower()
+                for error_indicator in ["error", "failed", "invalid", "not found", "permission denied"]
             )
-            
+
+            result = CommandResult(command=command, success=success, output=output, execution_time=execution_time)
+
             logger.debug(f"Command completed in {execution_time:.2f}s, success: {success}")
             return result
-            
+
         except Exception as e:
             execution_time = time.time() - start_time
             logger.error(f"Command execution failed: {e}")
-            
-            return CommandResult(
-                command=command,
-                success=False,
-                output="",
-                error=str(e),
-                execution_time=execution_time
-            )
-    
+
+            return CommandResult(command=command, success=False, output="", error=str(e), execution_time=execution_time)
+
     def _read_shell_output(self, timeout: int = 5) -> str:
         """
         Read output from shell with timeout.
-        
+
         Args:
             timeout: Maximum time to wait for output
-            
+
         Returns:
             Shell output as string
         """
         output = ""
         start_time = time.time()
-        
+
         while time.time() - start_time < timeout:
             if self._shell.recv_ready():
-                chunk = self._shell.recv(4096).decode('utf-8', errors='ignore')
+                chunk = self._shell.recv(4096).decode("utf-8", errors="ignore")
                 output += chunk
-                
+
                 # If we haven't received data for a bit, assume command is done
                 time.sleep(0.1)
                 if not self._shell.recv_ready():
@@ -439,50 +416,50 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
                         break
             else:
                 time.sleep(0.1)
-        
+
         return output
-    
+
     def get_system_status(self) -> SystemStatus:
         """
         Get comprehensive system status.
-        
+
         Returns:
             SystemStatus object with current state information
         """
         if not self.is_connected():
             raise ConnectionError("Not connected to Check Point VM")
-        
+
         logger.debug("Getting system status")
-        
+
         try:
             # Get version information
             version_result = self.execute_command("show version all")
             version = "Unknown"
             if version_result.success:
                 # Extract version from output (this is a simplified extraction)
-                version_match = re.search(r'R\d+\.\d+', version_result.output)
+                version_match = re.search(r"R\d+\.\d+", version_result.output)
                 if version_match:
                     version = version_match.group()
-            
+
             # Get hostname
             hostname_result = self.execute_command("show hostname")
             hostname = "Unknown"
             if hostname_result.success:
                 # Extract hostname from output
-                lines = hostname_result.output.strip().split('\n')
+                lines = hostname_result.output.strip().split("\n")
                 for line in lines:
-                    if line.strip() and not line.startswith('>'):
+                    if line.strip() and not line.startswith(">"):
                         hostname = line.strip()
                         break
-            
+
             # Check if interfaces are configured
             interfaces_result = self.execute_command("show interfaces")
             interfaces_configured = interfaces_result.success and "eth" in interfaces_result.output
-            
+
             # Check if policy is installed
             policy_result = self.execute_command("show asset all")
             policy_installed = policy_result.success and "policy" in policy_result.output.lower()
-            
+
             return SystemStatus(
                 state=self._system_state,
                 version=version,
@@ -491,12 +468,11 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
                 policy_installed=policy_installed,
                 cli_mode=self._current_cli_mode,
                 expert_password_set=(self._system_state != CheckPointState.FRESH_INSTALL),
-                wizard_completed=(self._system_state in [
-                    CheckPointState.WIZARD_COMPLETE, 
-                    CheckPointState.FULLY_CONFIGURED
-                ])
+                wizard_completed=(
+                    self._system_state in [CheckPointState.WIZARD_COMPLETE, CheckPointState.FULLY_CONFIGURED]
+                ),
             )
-            
+
         except Exception as e:
             logger.error(f"Error getting system status: {e}")
             raise StateError(f"Could not retrieve system status: {e}")

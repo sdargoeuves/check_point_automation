@@ -40,20 +40,64 @@ checkpoint_automation/
 
 ## Installation
 
-1. Clone the repository:
+### Using uv (Recommended)
+
+[uv](https://docs.astral.sh/uv/) is a fast Python package manager. Install it first:
+
 ```bash
+# On macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# On Windows
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Or with pip
+pip install uv
+```
+
+Then set up the project:
+
+```bash
+# Clone the repository
 git clone <repository-url>
 cd checkpoint-vm-automation
+
+# Create virtual environment and install dependencies
+uv sync
+
+# Install with optional dependencies (choose what you need)
+uv sync --extra nornir      # For Nornir backend
+uv sync --extra ansible     # For Ansible backend  
+uv sync --extra dev         # For development tools
+uv sync --extra all         # Install everything
+
+# Activate the virtual environment
+source .venv/bin/activate   # On macOS/Linux
+# or
+.venv\Scripts\activate      # On Windows
 ```
 
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+### Using pip (Alternative)
 
-3. Install the package:
 ```bash
+# Clone the repository
+git clone <repository-url>
+cd checkpoint-vm-automation
+
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate   # On macOS/Linux
+# or
+.venv\Scripts\activate      # On Windows
+
+# Install the package with dependencies
 pip install -e .
+
+# Install optional dependencies as needed
+pip install -e ".[nornir]"    # For Nornir backend
+pip install -e ".[ansible]"   # For Ansible backend
+pip install -e ".[dev]"       # For development tools
+pip install -e ".[all]"       # Install everything
 ```
 
 ## Configuration
@@ -98,29 +142,56 @@ checkpoint-automation policy --config my_config.yaml
 
 ## Development
 
+### Setup Development Environment
+
+```bash
+# Install with development dependencies
+uv sync --extra dev
+
+# Or if using pip
+pip install -e ".[dev]"
+```
+
 ### Running Tests
 
 ```bash
 # Run unit tests
-pytest tests/unit/
+uv run pytest tests/unit/
 
 # Run integration tests (requires Check Point VM)
-pytest tests/integration/
+uv run pytest tests/integration/
 
 # Run all tests with coverage
+uv run pytest --cov=checkpoint_automation
+
+# Or if using activated venv
+pytest tests/unit/
 pytest --cov=checkpoint_automation
 ```
 
 ### Code Quality
 
 ```bash
-# Format code
-black checkpoint_automation/ tests/
+# Format code (ruff replaces black)
+uv run ruff format checkpoint_automation/ tests/
 
-# Lint code
-flake8 checkpoint_automation/ tests/
+# Lint code  
+uv run ruff check checkpoint_automation/ tests/
+
+# Fix linting issues automatically
+uv run ruff check --fix checkpoint_automation/ tests/
 
 # Type checking
+uv run mypy checkpoint_automation/
+
+# Run all code quality checks
+uv run ruff format checkpoint_automation/ tests/
+uv run ruff check --fix checkpoint_automation/ tests/
+uv run mypy checkpoint_automation/
+
+# Or if using activated venv
+ruff format checkpoint_automation/ tests/
+ruff check checkpoint_automation/ tests/
 mypy checkpoint_automation/
 ```
 

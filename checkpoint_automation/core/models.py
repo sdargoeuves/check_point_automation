@@ -13,6 +13,7 @@ from datetime import datetime
 
 class CheckPointState(Enum):
     """Enumeration of possible Check Point VM states."""
+
     FRESH_INSTALL = "fresh"
     EXPERT_PASSWORD_SET = "expert_set"
     WIZARD_COMPLETE = "wizard_complete"
@@ -22,6 +23,7 @@ class CheckPointState(Enum):
 
 class CLIMode(Enum):
     """Enumeration of Check Point CLI modes."""
+
     CLISH = "clish"
     EXPERT = "expert"
     UNKNOWN = "unknown"
@@ -29,6 +31,7 @@ class CLIMode(Enum):
 
 class NetworkObjectType(Enum):
     """Types of network objects in Check Point."""
+
     HOST = "host"
     NETWORK = "network"
     RANGE = "range"
@@ -37,6 +40,7 @@ class NetworkObjectType(Enum):
 
 class FirewallAction(Enum):
     """Firewall rule actions."""
+
     ACCEPT = "accept"
     DROP = "drop"
     REJECT = "reject"
@@ -45,12 +49,13 @@ class FirewallAction(Enum):
 @dataclass
 class InterfaceConfig:
     """Configuration for a network interface."""
+
     name: str
     ip_address: str
     subnet_mask: str
     description: Optional[str] = None
     enabled: bool = True
-    
+
     def __post_init__(self):
         """Validate interface configuration."""
         if not self.name:
@@ -64,9 +69,10 @@ class InterfaceConfig:
 @dataclass
 class OSPFArea:
     """OSPF area configuration."""
+
     area_id: str
     area_type: str = "normal"  # normal, stub, nssa
-    
+
     def __post_init__(self):
         """Validate OSPF area configuration."""
         if not self.area_id:
@@ -78,9 +84,10 @@ class OSPFArea:
 @dataclass
 class OSPFNetwork:
     """OSPF network configuration."""
+
     network: str
     area_id: str
-    
+
     def __post_init__(self):
         """Validate OSPF network configuration."""
         if not self.network:
@@ -92,11 +99,12 @@ class OSPFNetwork:
 @dataclass
 class OSPFConfig:
     """OSPF routing protocol configuration."""
+
     router_id: str
     areas: List[OSPFArea] = field(default_factory=list)
     networks: List[OSPFNetwork] = field(default_factory=list)
     enabled: bool = True
-    
+
     def __post_init__(self):
         """Validate OSPF configuration."""
         if not self.router_id:
@@ -106,11 +114,12 @@ class OSPFConfig:
 @dataclass
 class LLDPConfig:
     """LLDP configuration."""
+
     enabled: bool = True
     transmit_interval: int = 30
     hold_multiplier: int = 4
     interfaces: List[str] = field(default_factory=list)
-    
+
     def __post_init__(self):
         """Validate LLDP configuration."""
         if self.transmit_interval <= 0:
@@ -122,11 +131,12 @@ class LLDPConfig:
 @dataclass
 class NetworkObject:
     """Check Point network object definition."""
+
     name: str
     type: NetworkObjectType
     value: str
     description: Optional[str] = None
-    
+
     def __post_init__(self):
         """Validate network object configuration."""
         if not self.name:
@@ -138,6 +148,7 @@ class NetworkObject:
 @dataclass
 class FirewallRule:
     """Check Point firewall rule definition."""
+
     name: str
     source: List[str]
     destination: List[str]
@@ -146,7 +157,7 @@ class FirewallRule:
     track: str = "Log"
     enabled: bool = True
     description: Optional[str] = None
-    
+
     def __post_init__(self):
         """Validate firewall rule configuration."""
         if not self.name:
@@ -162,12 +173,13 @@ class FirewallRule:
 @dataclass
 class WizardConfig:
     """Configuration for Check Point first-time wizard."""
+
     hostname: str
     timezone: str = "UTC"
     ntp_servers: List[str] = field(default_factory=list)
     dns_servers: List[str] = field(default_factory=list)
     domain_name: Optional[str] = None
-    
+
     def __post_init__(self):
         """Validate wizard configuration."""
         if not self.hostname:
@@ -177,6 +189,7 @@ class WizardConfig:
 @dataclass
 class CheckPointConfig:
     """Complete Check Point VM configuration."""
+
     hostname: str
     management_ip: str
     expert_password: str
@@ -187,7 +200,7 @@ class CheckPointConfig:
     network_objects: List[NetworkObject] = field(default_factory=list)
     firewall_rules: List[FirewallRule] = field(default_factory=list)
     wizard_config: Optional[WizardConfig] = None
-    
+
     def __post_init__(self):
         """Validate complete configuration."""
         if not self.hostname:
@@ -203,6 +216,7 @@ class CheckPointConfig:
 @dataclass
 class SystemStatus:
     """Current system status and state information."""
+
     state: CheckPointState
     version: str
     hostname: str
@@ -212,7 +226,7 @@ class SystemStatus:
     cli_mode: CLIMode = CLIMode.UNKNOWN
     expert_password_set: bool = False
     wizard_completed: bool = False
-    
+
     def __post_init__(self):
         """Validate system status."""
         if not self.version:
@@ -224,13 +238,14 @@ class SystemStatus:
 @dataclass
 class CommandResult:
     """Result of a CLI command execution."""
+
     command: str
     success: bool
     output: str
     error: Optional[str] = None
     exit_code: Optional[int] = None
     execution_time: Optional[float] = None
-    
+
     def __post_init__(self):
         """Validate command result."""
         if not self.command:
@@ -240,12 +255,13 @@ class CommandResult:
 @dataclass
 class ConnectionInfo:
     """SSH connection information."""
+
     host: str
     port: int = 22
     username: str = "admin"
     password: str = "admin"
     timeout: int = 30
-    
+
     def __post_init__(self):
         """Validate connection information."""
         if not self.host:
