@@ -2,14 +2,13 @@
 Unit tests for Check Point automation exceptions.
 """
 
-import pytest
 from checkpoint_automation.core.exceptions import (
-    CheckPointError,
-    ConnectionError,
-    ConfigurationError,
-    ValidationError,
-    StateError,
     AuthenticationError,
+    CheckPointError,
+    ConfigurationError,
+    ConnectionError,
+    StateError,
+    ValidationError,
 )
 
 

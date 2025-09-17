@@ -5,14 +5,16 @@ This module provides the CheckPointConnectionManager class that handles
 SSH connections, CLI mode detection, and command execution for Check Point VMs.
 """
 
-import paramiko
-import time
 import re
-from typing import Optional, Dict, Any
-from .models import ConnectionInfo, CommandResult, CheckPointState, CLIMode, SystemStatus
+import time
+from typing import Optional
+
+import paramiko
+
+from .exceptions import AuthenticationError, ConnectionError, StateError
 from .interfaces import ConnectionManagerInterface
-from .exceptions import ConnectionError, AuthenticationError, StateError
 from .logging_config import get_logger
+from .models import CheckPointState, CLIMode, CommandResult, ConnectionInfo, SystemStatus
 
 logger = get_logger("checkpoint_automation.connection")
 
@@ -196,7 +198,7 @@ class CheckPointConnectionManager(ConnectionManagerInterface):
                 if "[expert@" in prompt_output.lower() and "]#" in prompt_output.lower():
                     logger.debug("Detected Expert mode from prompt pattern")
                     self._current_cli_mode = CLIMode.EXPERT
-                elif ">" in prompt_output and not "[" in prompt_output:
+                elif ">" in prompt_output and "[" not in prompt_output:
                     logger.debug("Detected CLISH mode from prompt pattern")
                     self._current_cli_mode = CLIMode.CLISH
                 else:

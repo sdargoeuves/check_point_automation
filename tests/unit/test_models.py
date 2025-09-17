@@ -2,25 +2,22 @@
 Unit tests for Check Point automation data models.
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
+
 from checkpoint_automation.core.models import (
     CheckPointState,
-    CLIMode,
-    NetworkObjectType,
-    FirewallAction,
-    InterfaceConfig,
-    OSPFArea,
-    OSPFNetwork,
-    OSPFConfig,
-    LLDPConfig,
-    NetworkObject,
-    FirewallRule,
-    WizardConfig,
-    CheckPointConfig,
-    SystemStatus,
-    CommandResult,
     ConnectionInfo,
+    FirewallAction,
+    FirewallRule,
+    InterfaceConfig,
+    NetworkObject,
+    NetworkObjectType,
+    OSPFArea,
+    OSPFConfig,
+    OSPFNetwork,
+    SystemStatus,
 )
 
 

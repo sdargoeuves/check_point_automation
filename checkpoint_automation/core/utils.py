@@ -5,10 +5,11 @@ This module provides common utility functions used across
 the automation framework.
 """
 
-import time
 import functools
-from typing import Callable, Any, Optional, Dict
-from .exceptions import CheckPointError, ConnectionError
+import time
+from typing import Any, Callable, Dict
+
+from .exceptions import ConnectionError
 from .logging_config import get_logger
 
 logger = get_logger(__name__)

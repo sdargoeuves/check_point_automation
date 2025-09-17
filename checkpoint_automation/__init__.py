@@ -8,7 +8,7 @@ including initial setup, network configuration, and security policy management.
 __version__ = "1.0.0"
 __author__ = "Network Automation Team"
 
-from .core.exceptions import CheckPointError, ConnectionError, ConfigurationError, ValidationError
+from .core.exceptions import CheckPointError, ConfigurationError, ConnectionError, ValidationError
 from .core.models import CheckPointConfig, CheckPointState, SystemStatus
 
 __all__ = [

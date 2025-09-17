@@ -7,9 +7,9 @@ different log levels, formatters, and output destinations.
 
 import logging
 import logging.config
-import sys
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from .interfaces import LoggerInterface
 
 

@@ -2,8 +2,9 @@
 Setup script for Check Point VM Automation package.
 """
 
-from setuptools import setup, find_packages
 from pathlib import Path
+
+from setuptools import find_packages, setup
 
 # Read the README file
 readme_file = Path(__file__).parent / "README.md"

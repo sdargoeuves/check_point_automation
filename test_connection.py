@@ -3,10 +3,11 @@
 Quick test script to connect to Check Point firewall and explore its state.
 """
 
-import paramiko
-import time
 import sys
-from checkpoint_automation.core.models import ConnectionInfo
+import time
+
+import paramiko
+
 from checkpoint_automation.core.logging_config import get_logger
 
 logger = get_logger("test_connection")
@@ -76,7 +77,7 @@ def test_checkpoint_connection(host: str, username: str = "admin", password: str
                 print("  No output received")
 
         # Try to detect CLI mode
-        print(f"\n🔍 Detecting CLI mode...")
+        print("\n🔍 Detecting CLI mode...")
         shell.send("help\n")
         time.sleep(2)
 
@@ -95,7 +96,7 @@ def test_checkpoint_connection(host: str, username: str = "admin", password: str
             print(f"  Help output sample: {help_output[:200]}...")
 
         # Try to get system status
-        print(f"\n🔍 Getting system status...")
+        print("\n🔍 Getting system status...")
         shell.send("show asset all\n")
         time.sleep(2)
 

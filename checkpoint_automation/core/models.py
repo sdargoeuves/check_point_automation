@@ -6,9 +6,9 @@ Check Point VM configurations, system states, and operational data.
 """
 
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from enum import Enum
+from typing import List, Optional
 
 
 class CheckPointState(Enum):

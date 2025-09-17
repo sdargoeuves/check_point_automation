@@ -6,20 +6,21 @@ to ensure consistent behavior across the automation framework.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
+
 from .models import (
     CheckPointConfig,
-    SystemStatus,
-    CommandResult,
-    ConnectionInfo,
-    InterfaceConfig,
-    OSPFConfig,
-    LLDPConfig,
-    NetworkObject,
-    FirewallRule,
-    WizardConfig,
     CheckPointState,
     CLIMode,
+    CommandResult,
+    ConnectionInfo,
+    FirewallRule,
+    InterfaceConfig,
+    LLDPConfig,
+    NetworkObject,
+    OSPFConfig,
+    SystemStatus,
+    WizardConfig,
 )
 
 

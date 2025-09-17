@@ -6,7 +6,7 @@ framework to handle different types of errors that can occur during
 Check Point VM operations.
 """
 
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 class CheckPointError(Exception):

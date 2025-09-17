@@ -4,9 +4,10 @@ Test script for CheckPointConnectionManager implementation.
 """
 
 import sys
+
 from checkpoint_automation.core.connection import CheckPointConnectionManager
+from checkpoint_automation.core.logging_config import get_logger, setup_logging
 from checkpoint_automation.core.models import ConnectionInfo
-from checkpoint_automation.core.logging_config import setup_logging, get_logger
 
 # Setup logging
 setup_logging(log_level="INFO", console_output=True)
@@ -77,7 +78,7 @@ def test_connection_manager(host: str):
                     if line.strip():
                         print(f"    Output: {line.strip()}")
                 if len(result.output.strip().split("\n")) > 3:
-                    print(f"    ... (truncated)")
+                    print("    ... (truncated)")
             else:
                 print(f"    Error: {result.error}")
 
