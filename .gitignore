@@ -16,6 +16,9 @@ __pycache__/
 # C extensions
 *.so
 
+# Kiro files
+.kiro
+
 # Distribution / packaging
 .Python
 build/
@@ -87,6 +90,12 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+
+# VS Code
+.vscode
+
+# Ruff
+.ruff_cache
 
 # IPython
 profile_default/
