@@ -1,1 +1,0 @@
-"""Core components for Check Point automation."""

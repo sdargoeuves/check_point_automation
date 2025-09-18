@@ -1,22 +1,13 @@
 """
-Check Point VM Automation Package
+Check Point VM Automation Framework
 
-This package provides automation capabilities for Check Point VM appliances,
-including initial setup, network configuration, and security policy management.
+A Python library for automating Check Point firewall configuration and management.
 """
 
-__version__ = "1.0.0"
-__author__ = "Network Automation Team"
+__version__ = "0.1.0"
+__author__ = "Check Point Automation Team"
 
-from .core.exceptions import CheckPointError, ConfigurationError, ConnectionError, ValidationError
-from .core.models import CheckPointConfig, CheckPointState, SystemStatus
+from .ssh_connection import SSHConnectionManager
+from .config import FirewallConfig
 
-__all__ = [
-    "CheckPointError",
-    "ConnectionError",
-    "ConfigurationError",
-    "ValidationError",
-    "CheckPointConfig",
-    "CheckPointState",
-    "SystemStatus",
-]
+__all__ = ["SSHConnectionManager", "FirewallConfig"]
