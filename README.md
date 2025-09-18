@@ -1,7 +1,6 @@
 # Check Point VM Automation
 
-A comprehensive automation framework for Check Point VM appliances, providing automated initial setup, network configuration, and security policy management.
-Starting from a fresh install, all the way to a fully ready and functional FW.
+A comprehensive automation framework for Check Point VM appliances, providing automated initial setup, network configuration, and security policy management. Starting from a fresh install, all the way to a fully ready and functional FW.
 
 ## Features
 

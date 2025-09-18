@@ -30,7 +30,7 @@ class TestCheckPointError:
         assert error.message == "Test error"
         assert error.details == details
         assert "Details:" in str(error)
-        assert "host=192.168.1.100" in str(error)
+        assert "'host': '192.168.1.100'" in str(error)
 
 
 class TestSpecificExceptions:
