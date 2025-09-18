@@ -2,6 +2,7 @@
 SSH Connection Manager for Check Point firewalls.
 """
 
+import gzip
 import logging
 import logging.handlers
 import os
@@ -12,6 +13,7 @@ from typing import Optional
 import paramiko
 
 from .config import FirewallConfig
+from .command_executor import CommandExecutor, CommandResponse, FirewallMode
 
 # Define a custom handler that compresses rotated files
 class CompressedRotatingFileHandler(logging.handlers.RotatingFileHandler):
@@ -77,6 +79,7 @@ class SSHConnectionManager:
         self.shell: Optional[paramiko.Channel] = None
         self.console_log_level = console_log_level
         self.logger = self._setup_logging()
+        self.command_executor: Optional[CommandExecutor] = None
         
     def _setup_logging(self) -> logging.Logger:
         """Set up logging configuration for SSH interactions."""
@@ -182,11 +185,19 @@ class SSHConnectionManager:
             self.shell = self.client.invoke_shell()
             self.shell.settimeout(timeout)
             
+            # Initialize command executor
+            self.command_executor = CommandExecutor(self.shell, self.logger)
+            
             # Wait for and capture initial shell output to verify connection
             initial_output = self._read_initial_output()
             if initial_output:
                 self.logger.debug(f"Initial shell output from {self.config.ip_address}:\n{initial_output}")
                 self.logger.info(f"Successfully connected to {self.config.ip_address}")
+                
+                # Detect initial mode
+                initial_mode = self.command_executor.detect_mode(initial_output)
+                self.logger.info(f"Initial firewall mode detected: {initial_mode.value}")
+                
                 return True
             else:
                 self.logger.warning(f"Connected to {self.config.ip_address} but no initial output received")
@@ -210,6 +221,9 @@ class SSHConnectionManager:
                 self.client.close()
                 self.client = None
                 self.logger.info(f"Disconnected from {self.config.ip_address}")
+            
+            # Clear command executor reference
+            self.command_executor = None
                 
         except Exception as e:
             self.logger.warning(f"Error during disconnect: {e}")
@@ -263,3 +277,179 @@ class SSHConnectionManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
         self.disconnect()
+    
+    def execute_command(self, command: str, timeout: Optional[int] = None) -> CommandResponse:
+        """Execute a command on the firewall.
+        
+        Args:
+            command: Command to execute
+            timeout: Command timeout in seconds
+            
+        Returns:
+            CommandResponse object with results
+            
+        Raises:
+            ConnectionError: If not connected to firewall
+        """
+        if not self.command_executor:
+            raise ConnectionError("Not connected to firewall")
+        
+        return self.command_executor.send_command(command, timeout)
+    
+    def get_current_mode(self) -> FirewallMode:
+        """Get current firewall mode.
+        
+        Returns:
+            Current firewall mode
+            
+        Raises:
+            ConnectionError: If not connected to firewall
+        """
+        if not self.command_executor:
+            raise ConnectionError("Not connected to firewall")
+        
+        return self.command_executor.get_current_mode()
+    
+    def detect_mode(self) -> FirewallMode:
+        """Detect current firewall mode by sending a test command.
+        
+        Returns:
+            Detected firewall mode
+            
+        Raises:
+            ConnectionError: If not connected to firewall
+        """
+        if not self.command_executor:
+            raise ConnectionError("Not connected to firewall")
+        
+        return self.command_executor.detect_mode()
+    
+    def wait_for_prompt(self, expected_prompt: str, timeout: int = 30) -> bool:
+        """Wait for a specific prompt pattern.
+        
+        Args:
+            expected_prompt: Regex pattern for expected prompt
+            timeout: Maximum time to wait
+            
+        Returns:
+            True if prompt detected within timeout
+            
+        Raises:
+            ConnectionError: If not connected to firewall
+        """
+        if not self.command_executor:
+            raise ConnectionError("Not connected to firewall")
+        
+        return self.command_executor.wait_for_prompt(expected_prompt, timeout)
+    
+    def enter_expert_mode(self, expert_password: str) -> bool:
+        """Enter expert mode with proper password handling.
+        
+        Args:
+            expert_password: Expert mode password
+            
+        Returns:
+            True if successfully entered expert mode
+            
+        Raises:
+            ConnectionError: If not connected to firewall
+        """
+        if not self.command_executor:
+            raise ConnectionError("Not connected to firewall")
+        
+        self.logger.info("Attempting to enter expert mode")
+        
+        try:
+            # Send expert command and wait for password prompt
+            self.logger.debug("Sending expert command")
+            self.shell.send("expert\n")
+            
+            # Wait for password prompt
+            output = ""
+            start_time = time.time()
+            timeout = 10
+            
+            while time.time() - start_time < timeout:
+                if self.shell.recv_ready():
+                    chunk = self.shell.recv(1024).decode('utf-8', errors='ignore')
+                    output += chunk
+                    
+                    # Check for password prompt
+                    if "Enter expert password:" in output:
+                        self.logger.debug("Password prompt detected, sending password")
+                        
+                        # Send password
+                        self.shell.send(expert_password + '\n')
+                        
+                        # Wait a bit for the transition to complete
+                        time.sleep(0.2)
+                        
+                        # Now send a simple command to get the current prompt and detect mode
+                        self.logger.debug("Sending empty command to detect current mode")
+                        self.shell.send('\n')
+                        time.sleep(0.2)
+                        
+                        # Read the response to detect current mode
+                        if self.shell.recv_ready():
+                            mode_check_output = self.shell.recv(4096).decode('utf-8', errors='ignore')
+                            self.logger.debug(f"Mode check output: '{mode_check_output}'")
+                            
+                            # Detect mode from this output
+                            detected_mode = self.command_executor.detect_mode(mode_check_output)
+                            self.logger.debug(f"Detected mode: {detected_mode.value}")
+                            
+                            if detected_mode == FirewallMode.EXPERT:
+                                self.logger.info("Successfully entered expert mode")
+                                self.command_executor.current_mode = FirewallMode.EXPERT
+                                return True
+                            else:
+                                # Check for authentication failure
+                                if "Invalid" in mode_check_output or "denied" in mode_check_output.lower():
+                                    self.logger.error("Expert password authentication failed")
+                                else:
+                                    self.logger.warning(f"Expert mode entry unclear. Mode: {detected_mode.value}, Output: {mode_check_output[:100]}")
+                                return False
+                        else:
+                            self.logger.warning("No response after password and mode check")
+                            return False
+                        
+                else:
+                    time.sleep(0.1)
+            
+            # If we get here, we never got password prompt
+            self.logger.warning(f"No password prompt received. Output: {output[:100]}")
+            return False
+                
+        except Exception as e:
+            self.logger.error(f"Error entering expert mode: {e}")
+            return False
+    
+    def exit_expert_mode(self) -> bool:
+        """Exit expert mode back to clish.
+        
+        Returns:
+            True if successfully exited expert mode
+            
+        Raises:
+            ConnectionError: If not connected to firewall
+        """
+        if not self.command_executor:
+            raise ConnectionError("Not connected to firewall")
+        
+        if self.get_current_mode() != FirewallMode.EXPERT:
+            self.logger.debug("Not in expert mode, no need to exit")
+            return True
+        
+        try:
+            exit_response = self.execute_command("exit")
+            
+            if self.get_current_mode() == FirewallMode.CLISH:
+                self.logger.info("Successfully exited expert mode")
+                return True
+            else:
+                self.logger.warning("Exit expert mode may have failed")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error exiting expert mode: {e}")
+            return False
