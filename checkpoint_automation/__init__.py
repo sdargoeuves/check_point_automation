@@ -11,5 +11,6 @@ from .ssh_connection import SSHConnectionManager
 from .config import FirewallConfig
 from .command_executor import CommandExecutor, CommandResponse, FirewallMode
 from .expert_password import ExpertPasswordManager
+from .script_deployment import ScriptDeploymentManager
 
-__all__ = ["SSHConnectionManager", "FirewallConfig", "CommandExecutor", "CommandResponse", "FirewallMode", "ExpertPasswordManager"]
+__all__ = ["SSHConnectionManager", "FirewallConfig", "CommandExecutor", "CommandResponse", "FirewallMode", "ExpertPasswordManager", "ScriptDeploymentManager"]

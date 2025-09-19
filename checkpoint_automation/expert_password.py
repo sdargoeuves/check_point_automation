@@ -128,21 +128,17 @@ class ExpertPasswordManager:
             return False, response.error_message or "Failed to acquire database lock"
     
     def _handle_password_prompts(self, password: str) -> Tuple[bool, str]:
-        """Handle password entry and confirmation prompts - bulletproof approach.
+        """Handle password prompts - bulletproof method that works.
         
-        Args:
-            password: Password to enter
-            
-        Returns:
-            Tuple of (success, status_message)
+        Your method works because it IGNORES detection and just sends both passwords.
+        Detection was the problem, not timing.
         """
-        self.logger.debug("Handling password prompts - bulletproof approach")
+        self.logger.debug("Using bulletproof method - ignore detection, just send passwords")
         
         try:
             all_output = ""
             
-            # Step 1: Wait for first password prompt and send password
-            self.logger.debug("Step 1: Waiting for first password prompt")
+            # Step 1: Wait for first prompt and send password
             start_time = time.time()
             while time.time() - start_time < 10:
                 if self.ssh_manager.shell.recv_ready():
@@ -157,49 +153,46 @@ class ExpertPasswordManager:
                 else:
                     time.sleep(0.1)
             
-            # Step 2: IGNORE PROMPT DETECTION - just send password again after a moment
-            self.logger.debug("Step 2: Sending password again (ignoring prompt detection)")
-            time.sleep(0.5)  # Brief pause
+            # Step 2: IGNORE DETECTION - just send password again
+            self.logger.debug("Sending password again (ignoring detection)")
+            time.sleep(0.5)
             self.ssh_manager.shell.send(password + '\n')
             
-            # Step 3: Read all output and if nothing immediate, press enter
-            self.logger.debug("Step 3: Reading output, will press enter if needed")
-            time.sleep(0.5)  # Brief pause to let output come
+            # Step 3: Read all output
+            self.logger.debug("Reading final output")
+            time.sleep(0.5)
             
-            # Read whatever is available
-            read_start = time.time()
-            while time.time() - read_start < 2:
+            read_count = 0
+            while read_count < 5:
                 if self.ssh_manager.shell.recv_ready():
                     chunk = self.ssh_manager.shell.recv(4096).decode('utf-8', errors='ignore')
                     all_output += chunk
-                    self.logger.debug(f"Additional output: '{chunk}'")
+                    self.logger.debug(f"Final output: '{chunk}'")
+                    read_count += 1
                 else:
                     break
             
-            # If we don't see a prompt, press enter to get one
+            # If no prompt, press enter
             if ">" not in all_output and "#" not in all_output:
                 self.logger.debug("No prompt seen, pressing enter")
                 self.ssh_manager.shell.send('\n')
                 time.sleep(0.5)
                 
-                # Read final output
                 if self.ssh_manager.shell.recv_ready():
                     chunk = self.ssh_manager.shell.recv(4096).decode('utf-8', errors='ignore')
                     all_output += chunk
-                    self.logger.debug(f"Final output after enter: '{chunk}'")
+                    self.logger.debug(f"After enter: '{chunk}'")
             
-            self.logger.debug(f"Complete session output: '{all_output}'")
+            self.logger.debug(f"Complete output: '{all_output}'")
             
-            # Check for errors
             if "error" in all_output.lower() or "failed" in all_output.lower():
                 return False, f"Password setup failed: {all_output}"
             
-            # If we got this far, assume success
             return True, "Password setup completed"
             
         except Exception as e:
-            self.logger.error(f"Error handling password prompts: {e}")
-            return False, f"Error handling password prompts: {str(e)}"
+            self.logger.error(f"Error: {e}")
+            return False, f"Error: {str(e)}"
     
     def setup_expert_password_workflow(self, expert_password: str) -> Tuple[bool, str]:
         """Complete expert password setup workflow.
@@ -250,6 +243,9 @@ class ExpertPasswordManager:
     def _verify_expert_password(self, expert_password: str) -> Tuple[bool, str]:
         """Verify expert password was set correctly by attempting to enter expert mode.
         
+        This method uses the improved enter_expert_mode and exit_expert_mode methods
+        that include proper verification of mode transitions.
+        
         Args:
             expert_password: Expert password to verify
             
@@ -265,11 +261,11 @@ class ExpertPasswordManager:
                 if not self.ssh_manager.exit_expert_mode():
                     return False, "Failed to exit expert mode for verification"
             
-            # Try to enter expert mode with the password
+            # Try to enter expert mode with the password (includes verification)
             if self.ssh_manager.enter_expert_mode(expert_password):
                 self.logger.debug("Successfully entered expert mode, password verification passed")
                 
-                # Exit back to clish mode
+                # Exit back to clish mode (includes verification)
                 if self.ssh_manager.exit_expert_mode():
                     return True, "Expert password verified successfully"
                 else:

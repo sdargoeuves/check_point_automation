@@ -56,7 +56,7 @@ class CommandExecutor:
         ]
         
         # Timeout for command execution
-        self.default_timeout = 30
+        self.default_timeout = 10
         
     def send_command(self, command: str, timeout: Optional[int] = None, 
                     expected_prompts: Optional[List[str]] = None) -> CommandResponse:

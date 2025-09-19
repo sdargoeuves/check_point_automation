@@ -84,7 +84,7 @@ def test_mode_detection(ip_address: str):
             print("Testing prompt detection...")
             if current_mode == FirewallMode.CLISH:
                 # Wait for clish prompt
-                prompt_found = ssh.wait_for_prompt(r'[\w\-]+>\s*$', timeout=5)
+                prompt_found = ssh.wait_for_prompt(r'[\w\-]+>\s*$', timeout=2)
                 print(f"✓ Clish prompt detection: {prompt_found}")
             
             return True

@@ -20,7 +20,7 @@ def quick_test():
         
         for cmd in commands:
             print(f"\n--- Executing: {cmd} ---")
-            response = ssh.execute_command(cmd, timeout=10)
+            response = ssh.execute_command(cmd, timeout=5)
             print(f"Success: {response.success}")
             print(f"Output: {response.output[:200]}...")  # First 200 chars
 

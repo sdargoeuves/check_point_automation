@@ -343,13 +343,16 @@ class SSHConnectionManager:
         return self.command_executor.wait_for_prompt(expected_prompt, timeout)
     
     def enter_expert_mode(self, expert_password: str) -> bool:
-        """Enter expert mode with proper password handling.
+        """Enter expert mode with proper password handling and verification.
+        
+        This function implements requirement 1.7: WHEN expert password is set THEN the system 
+        SHALL be able to enter expert mode using "expert" command and password.
         
         Args:
             expert_password: Expert mode password
             
         Returns:
-            True if successfully entered expert mode
+            True if successfully entered expert mode and verified
             
         Raises:
             ConnectionError: If not connected to firewall
@@ -359,76 +362,118 @@ class SSHConnectionManager:
         
         self.logger.info("Attempting to enter expert mode")
         
+        # Ensure we're starting from clish mode
+        current_mode = self.get_current_mode()
+        if current_mode == FirewallMode.EXPERT:
+            self.logger.info("Already in expert mode")
+            return True
+        elif current_mode == FirewallMode.UNKNOWN:
+            # Try to detect current mode
+            current_mode = self.detect_mode()
+            if current_mode == FirewallMode.EXPERT:
+                self.logger.info("Already in expert mode (detected)")
+                return True
+        
         try:
             # Send expert command and wait for password prompt
             self.logger.debug("Sending expert command")
             self.shell.send("expert\n")
             
-            # Wait for password prompt
+            # Wait for password prompt with improved detection
             output = ""
             start_time = time.time()
-            timeout = 10
+            timeout = 5
+            password_sent = False
             
             while time.time() - start_time < timeout:
                 if self.shell.recv_ready():
                     chunk = self.shell.recv(1024).decode('utf-8', errors='ignore')
                     output += chunk
+                    self.logger.debug(f"Received chunk: '{chunk}'")
                     
                     # Check for password prompt
-                    if "Enter expert password:" in output:
+                    if "Enter expert password:" in output and not password_sent:
                         self.logger.debug("Password prompt detected, sending password")
                         
                         # Send password
                         self.shell.send(expert_password + '\n')
+                        password_sent = True
                         
-                        # Wait a bit for the transition to complete
-                        time.sleep(0.2)
+                        # Continue reading to get the response
+                        continue
+                    
+                    # Check for successful entry indicators after password was sent
+                    if password_sent:
+                        # Look for expert mode prompt pattern
+                        if "[Expert@" in output and "]#" in output:
+                            self.logger.debug("Expert mode prompt detected")
+                            break
                         
-                        # Now send a simple command to get the current prompt and detect mode
-                        self.logger.debug("Sending empty command to detect current mode")
-                        self.shell.send('\n')
-                        time.sleep(0.2)
-                        
-                        # Read the response to detect current mode
-                        if self.shell.recv_ready():
-                            mode_check_output = self.shell.recv(4096).decode('utf-8', errors='ignore')
-                            self.logger.debug(f"Mode check output: '{mode_check_output}'")
-                            
-                            # Detect mode from this output
-                            detected_mode = self.command_executor.detect_mode(mode_check_output)
-                            self.logger.debug(f"Detected mode: {detected_mode.value}")
-                            
-                            if detected_mode == FirewallMode.EXPERT:
-                                self.logger.info("Successfully entered expert mode")
-                                self.command_executor.current_mode = FirewallMode.EXPERT
-                                return True
-                            else:
-                                # Check for authentication failure
-                                if "Invalid" in mode_check_output or "denied" in mode_check_output.lower():
-                                    self.logger.error("Expert password authentication failed")
-                                else:
-                                    self.logger.warning(f"Expert mode entry unclear. Mode: {detected_mode.value}, Output: {mode_check_output[:100]}")
-                                return False
-                        else:
-                            self.logger.warning("No response after password and mode check")
+                        # Check for authentication failure
+                        if any(error in output.lower() for error in ["invalid", "denied", "incorrect", "failed"]):
+                            self.logger.error(f"Expert password authentication failed: {output}")
                             return False
                         
+                        # Check for warning message (this is normal)
+                        if "Warning! All configurations should be done through clish" in output:
+                            self.logger.debug("Expert mode warning message received (normal)")
+                            continue
+                            
                 else:
                     time.sleep(0.1)
             
-            # If we get here, we never got password prompt
-            self.logger.warning(f"No password prompt received. Output: {output[:100]}")
-            return False
+            # Verify we're in expert mode by checking current mode
+            if self._verify_expert_mode_entry():
+                self.logger.info("Successfully entered expert mode")
+                return True
+            else:
+                self.logger.error("Failed to verify expert mode entry")
+                return False
                 
         except Exception as e:
             self.logger.error(f"Error entering expert mode: {e}")
             return False
     
-    def exit_expert_mode(self) -> bool:
-        """Exit expert mode back to clish.
+    def _verify_expert_mode_entry(self) -> bool:
+        """Verify that we successfully entered expert mode.
         
         Returns:
-            True if successfully exited expert mode
+            True if currently in expert mode
+        """
+        try:
+            # Send a newline to get current prompt
+            self.shell.send('\n')
+            time.sleep(0.5)
+            
+            # Read response and detect mode
+            if self.shell.recv_ready():
+                response = self.shell.recv(1024).decode('utf-8', errors='ignore')
+                detected_mode = self.command_executor.detect_mode(response)
+                
+                if detected_mode == FirewallMode.EXPERT:
+                    self.command_executor.current_mode = FirewallMode.EXPERT
+                    return True
+                    
+            # Fallback: try to detect mode without output
+            detected_mode = self.command_executor.detect_mode()
+            if detected_mode == FirewallMode.EXPERT:
+                self.command_executor.current_mode = FirewallMode.EXPERT
+                return True
+                
+            return False
+            
+        except Exception as e:
+            self.logger.debug(f"Error verifying expert mode entry: {e}")
+            return False
+    
+    def exit_expert_mode(self) -> bool:
+        """Exit expert mode back to clish with proper verification.
+        
+        This function implements requirement 1.8: WHEN in expert mode THEN the system 
+        SHALL be able to exit back to clish using "exit" command.
+        
+        Returns:
+            True if successfully exited expert mode and verified
             
         Raises:
             ConnectionError: If not connected to firewall
@@ -436,20 +481,91 @@ class SSHConnectionManager:
         if not self.command_executor:
             raise ConnectionError("Not connected to firewall")
         
-        if self.get_current_mode() != FirewallMode.EXPERT:
+        # Check current mode
+        current_mode = self.get_current_mode()
+        if current_mode == FirewallMode.CLISH:
+            self.logger.debug("Already in clish mode, no need to exit expert mode")
+            return True
+        elif current_mode == FirewallMode.UNKNOWN:
+            # Try to detect current mode
+            current_mode = self.detect_mode()
+            if current_mode == FirewallMode.CLISH:
+                self.logger.debug("Already in clish mode (detected)")
+                return True
+            elif current_mode == FirewallMode.UNKNOWN:
+                self.logger.warning("Cannot determine current mode for exit operation")
+                return False
+        
+        if current_mode != FirewallMode.EXPERT:
             self.logger.debug("Not in expert mode, no need to exit")
             return True
         
+        self.logger.info("Attempting to exit expert mode")
+        
         try:
-            exit_response = self.execute_command("exit")
+            # Send exit command
+            self.logger.debug("Sending exit command")
+            self.shell.send("exit\n")
             
-            if self.get_current_mode() == FirewallMode.CLISH:
-                self.logger.info("Successfully exited expert mode")
+            # Wait for response and mode transition
+            output = ""
+            start_time = time.time()
+            timeout = 5
+            
+            while time.time() - start_time < timeout:
+                if self.shell.recv_ready():
+                    chunk = self.shell.recv(1024).decode('utf-8', errors='ignore')
+                    output += chunk
+                    self.logger.debug(f"Exit response chunk: '{chunk}'")
+                    
+                    # Look for clish mode prompt pattern
+                    if ">" in output and "[Expert@" not in output:
+                        self.logger.debug("Clish mode prompt detected")
+                        break
+                        
+                else:
+                    time.sleep(0.1)
+            
+            # Verify we're back in clish mode
+            if self._verify_clish_mode_entry():
+                self.logger.info("Successfully exited expert mode to clish")
                 return True
             else:
-                self.logger.warning("Exit expert mode may have failed")
+                self.logger.error("Failed to verify exit to clish mode")
                 return False
                 
         except Exception as e:
             self.logger.error(f"Error exiting expert mode: {e}")
+            return False
+    
+    def _verify_clish_mode_entry(self) -> bool:
+        """Verify that we successfully returned to clish mode.
+        
+        Returns:
+            True if currently in clish mode
+        """
+        try:
+            # Send a newline to get current prompt
+            self.shell.send('\n')
+            time.sleep(0.5)
+            
+            # Read response and detect mode
+            if self.shell.recv_ready():
+                response = self.shell.recv(1024).decode('utf-8', errors='ignore')
+                detected_mode = self.command_executor.detect_mode(response)
+                
+                if detected_mode == FirewallMode.CLISH:
+                    self.command_executor.current_mode = FirewallMode.CLISH
+                    return True
+                    
+            # Fallback: try to detect mode without output
+            detected_mode = self.command_executor.detect_mode()
+            if detected_mode == FirewallMode.CLISH:
+                self.command_executor.current_mode = FirewallMode.CLISH
+                return True
+                
+            return False
+            
+        except Exception as e:
+            self.logger.debug(f"Error verifying clish mode entry: {e}")
             return False
