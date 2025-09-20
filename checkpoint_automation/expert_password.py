@@ -50,13 +50,15 @@ class ExpertPasswordManager:
             output = self.ssh.connection.send_command_timing("expert")
             
             if "enter expert password:" in output.lower():
-                self.logger.info("Expert password is already set")
+                message = "Expert password is already set"
+                self.logger.info(message)
                 # Cancel the password prompt with Ctrl+C
                 self.ssh.connection.write_channel('\x03\n')
-                return True, "Expert password is already set"
+                return True, message
             elif "expert password has not been defined" in output.lower():
-                self.logger.info("Expert password is not set")
-                return False, "Expert password has not been defined"
+                message = "Expert password is not set"
+                self.logger.info(message)
+                return False, message
             else:
                 # Might already be in expert mode or other state
                 self.logger.debug(f"Unexpected expert command output: {output}")
@@ -67,7 +69,8 @@ class ExpertPasswordManager:
             return False, f"Error checking status: {str(e)}"
     
     def set_expert_password(self, password: str) -> bool:
-        """Set the expert password.
+        """
+        Set the expert password, by sending the command `set expert-password` and entering the password twice.
         
         Args:
             password: New expert password to set
@@ -88,13 +91,22 @@ class ExpertPasswordManager:
         try:
             # Step 1: Lock database
             self.logger.debug("Locking database")
-            lock_response = self.ssh.execute_command("lock database override")
-            if not lock_response.success:
-                self.logger.warning("Database lock failed, continuing anyway")
+            try:
+                output_lock = self.ssh.connection.send_command_timing("lock database override", read_timeout=5)
+                if "error" not in output_lock.lower():
+                    self.logger.debug("Database lock acquired")
+                else:
+                    self.logger.warning("Database lock failed, continuing anyway")
+            except Exception as e:
+                self.logger.warning(f"Database lock command failed: {e}, continuing anyway")
             
-                        # Step 2: Start password setup and check what prompt we get
+            # Step 2: Start password setup using write_channel approach
             self.logger.debug("Starting set expert-password")
-            output = self.ssh.connection.send_command_timing("set expert-password")
+            import time
+            
+            self.ssh.connection.write_channel("set expert-password\n")
+            time.sleep(0.5)
+            output = self.ssh.connection.read_channel()
             
             # Check if we're being asked for current password (means password already exists)
             if "enter current expert password:" in output.lower():
@@ -109,11 +121,17 @@ class ExpertPasswordManager:
                 
                 # Step 3: Send first password
                 self.logger.debug("Sending first password")
-                output += self.ssh.connection.send_command_timing(password, read_timeout=2)
+                self.ssh.connection.write_channel(f"{password}\n")
+                time.sleep(0.5)
                 
                 # Step 4: Send confirmation password  
                 self.logger.debug("Sending confirmation password")
-                output += self.ssh.connection.send_command_timing(password, read_timeout=2)
+                self.ssh.connection.write_channel(f"{password}\n")
+                time.sleep(1)
+                
+                # Read final output
+                final_output = self.ssh.connection.read_channel()
+                output += final_output
             else:
                 self.logger.error(f"Unexpected response to set expert-password: {output}")
                 return False
