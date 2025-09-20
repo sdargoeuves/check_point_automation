@@ -60,12 +60,12 @@ def test_expert_mode_functionality(ip_address: str, username: str = "admin", pas
             expert_mgr = ExpertPasswordManager(ssh_manager)
             
             # Check current expert password status
-            password_set, status_msg = expert_mgr.check_expert_password_status()
+            password_set, status_msg = expert_mgr.is_expert_password_set()
             print(f"   Expert password status: {status_msg}")
             
             if not password_set:
                 print("   Setting expert password...")
-                setup_success, setup_msg = expert_mgr.setup_expert_password_workflow(expert_password)
+                setup_success, setup_msg = expert_mgr.setup_expert_password(expert_password)
                 if setup_success:
                     print(f"   ✓ Expert password setup: {setup_msg}")
                 else:

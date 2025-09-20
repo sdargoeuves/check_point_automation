@@ -1,71 +1,21 @@
 """
-SSH Connection Manager for Check Point firewalls.
+Simplified SSH Connection Manager for Check Point firewalls using netmiko.
 """
 
-import gzip
 import logging
-import logging.handlers
 import os
-import socket
 import time
 from typing import Optional
 
-import paramiko
+from netmiko import ConnectHandler, NetMikoTimeoutException, NetMikoAuthenticationException
+from netmiko.exceptions import NetmikoBaseException
 
 from .config import FirewallConfig
-from .command_executor import CommandExecutor, CommandResponse, FirewallMode
+from .command_executor import CommandResponse, FirewallMode
 
-# Define a custom handler that compresses rotated files
-class CompressedRotatingFileHandler(logging.handlers.RotatingFileHandler):
-    """
-    A rotating file handler that compresses the rotated log files using gzip.
-    """
-    def doRollover(self):
-        """
-        Do a rollover, as described in RotatingFileHandler.
-        After the rollover, the newly rotated log file is compressed.
-        """
-        # Ensure the current stream is closed before rollover
-        if self.stream:
-            self.stream.close()
-            self.stream = None
-
-        # Get the name of the file that is about to be rotated to '.1'
-        # This is the 'baseFilename' of the current log file.
-        # super().doRollover() will rename this to self.baseFilename + '.1'
-        # before shuffling other backups.
-        path_to_compress = self.baseFilename
-
-        # Perform the standard rollover using the parent class's method
-        # This will rename 'path_to_compress' to 'path_to_compress.1',
-        # 'path_to_compress.1' to 'path_to_compress.2', etc., and
-        # open a new empty 'path_to_compress' for current logging.
-        super().doRollover()
-
-        # The file that was just rotated to .1 needs to be compressed.
-        # This is the file that was previously 'path_to_compress'.
-        rotated_file_name = self.rotation_filename(path_to_compress + ".1")
-
-        # Check if the file exists and hasn't been compressed yet
-        if os.path.exists(rotated_file_name) and not os.path.exists(rotated_file_name + '.gz'):
-            try:
-                with open(rotated_file_name, 'rb') as f_in:
-                    with gzip.open(rotated_file_name + '.gz', 'wb') as f_out:
-                        f_out.writelines(f_in)
-                os.remove(rotated_file_name) # Remove the uncompressed file
-            except Exception as e:
-                # In a real application, you'd want to log this error
-                # using a separate logging mechanism or handle it robustly.
-                # For simplicity, we'll just print it or pass.
-                print(f"Error compressing log file {rotated_file_name}: {e}")
-                pass
-
-        # Ensure a new stream is opened for continued logging
-        self.mode = 'a'
-        self.stream = self._open()
 
 class SSHConnectionManager:
-    """Manages SSH connections to Check Point firewalls."""
+    """Simplified SSH connection manager using netmiko for Check Point firewalls."""
     
     def __init__(self, config: FirewallConfig, console_log_level: str = "INFO"):
         """Initialize SSH connection manager.
@@ -75,14 +25,25 @@ class SSHConnectionManager:
             console_log_level: Log level for console output (DEBUG, INFO, WARNING, ERROR)
         """
         self.config = config
-        self.client: Optional[paramiko.SSHClient] = None
-        self.shell: Optional[paramiko.Channel] = None
+        self.connection: Optional[ConnectHandler] = None
         self.console_log_level = console_log_level
         self.logger = self._setup_logging()
-        self.command_executor: Optional[CommandExecutor] = None
+        self.current_mode = FirewallMode.UNKNOWN
+        
+        # Device parameters for netmiko
+        self.device_params = {
+            'device_type': 'checkpoint_gaia',
+            'host': self.config.ip_address,
+            'username': self.config.username,
+            'password': self.config.password,
+            'timeout': 30,
+            'session_timeout': 30,
+            'read_timeout_override': 30,
+            'keepalive': 30,
+        }
         
     def _setup_logging(self) -> logging.Logger:
-        """Set up logging configuration for SSH interactions."""
+        """Set up simplified logging configuration."""
         logger = logging.getLogger(f"checkpoint_automation.ssh.{self.config.ip_address}")
         
         # Prevent propagation to root logger to avoid double logging
@@ -95,14 +56,15 @@ class SSHConnectionManager:
             os.makedirs(logs_dir, exist_ok=True)
             
             log_file = os.path.join(logs_dir, f"checkpoint_{self.config.ip_address.replace('.', '_')}.log")
-
-            # *** CHANGE HERE: Use our custom CompressedRotatingFileHandler ***
-            file_handler = CompressedRotatingFileHandler(
+            
+            # Use standard rotating file handler (simpler than custom compressed version)
+            from logging.handlers import RotatingFileHandler
+            file_handler = RotatingFileHandler(
                 log_file,
                 maxBytes=10 * 1024 * 1024,  # 10MB
                 backupCount=5
             )
-
+            
             # Set up console handler for important messages
             console_handler = logging.StreamHandler()
             console_handler.setLevel(getattr(logging, self.console_log_level.upper()))
@@ -121,42 +83,8 @@ class SSHConnectionManager:
         
         return logger
     
-    def _read_initial_output(self, max_wait: int = 5) -> str:
-        """Read initial output from shell to verify connection.
-        
-        Args:
-            max_wait: Maximum time to wait for output in seconds
-            
-        Returns:
-            Initial shell output as string
-        """
-        if not self.shell:
-            return ""
-            
-        output = ""
-        start_time = time.time()
-        
-        try:
-            while time.time() - start_time < max_wait:
-                if self.shell.recv_ready():
-                    chunk = self.shell.recv(1024).decode('utf-8', errors='ignore')
-                    output += chunk
-                    
-                    # Check if we have a complete prompt (common Check Point prompts)
-                    if any(prompt in output for prompt in ['> ', '# ', '$ ', 'login: ', 'Password: ']):
-                        break
-                        
-                time.sleep(0.1)
-                
-        except socket.timeout:
-            self.logger.debug("Timeout while reading initial output")
-        except Exception as e:
-            self.logger.debug(f"Error reading initial output: {e}")
-            
-        return output.strip()
-    
     def connect(self, timeout: int = 30) -> bool:
-        """Establish SSH connection to the firewall.
+        """Establish SSH connection to the firewall using netmiko.
         
         Args:
             timeout: Connection timeout in seconds
@@ -167,63 +95,41 @@ class SSHConnectionManager:
         try:
             self.logger.info(f"Attempting to connect to {self.config.ip_address}")
             
-            # Create SSH client
-            self.client = paramiko.SSHClient()
-            self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            # Update timeout in device parameters
+            self.device_params.update({
+                'timeout': timeout,
+                'session_timeout': timeout,
+                'read_timeout_override': timeout
+            })
             
-            # Connect to the firewall
-            self.client.connect(
-                hostname=self.config.ip_address,
-                username=self.config.username,
-                password=self.config.password,
-                timeout=timeout,
-                look_for_keys=False,
-                allow_agent=False
-            )
+            # Create netmiko connection
+            self.connection = ConnectHandler(**self.device_params)
             
-            # Create interactive shell
-            self.shell = self.client.invoke_shell()
-            self.shell.settimeout(timeout)
+            # Detect initial mode
+            self.current_mode = self._detect_current_mode()
             
-            # Initialize command executor
-            self.command_executor = CommandExecutor(self.shell, self.logger)
+            self.logger.info(f"Successfully connected to {self.config.ip_address}")
+            self.logger.info(f"Initial firewall mode detected: {self.current_mode.value}")
             
-            # Wait for and capture initial shell output to verify connection
-            initial_output = self._read_initial_output()
-            if initial_output:
-                self.logger.debug(f"Initial shell output from {self.config.ip_address}:\n{initial_output}")
-                self.logger.info(f"Successfully connected to {self.config.ip_address}")
-                
-                # Detect initial mode
-                initial_mode = self.command_executor.detect_mode(initial_output)
-                self.logger.info(f"Initial firewall mode detected: {initial_mode.value}")
-                
-                return True
-            else:
-                self.logger.warning(f"Connected to {self.config.ip_address} but no initial output received")
-                return True  # Still consider it successful as shell was created
+            return True
             
-        except (paramiko.AuthenticationException, paramiko.SSHException, 
-                socket.error, socket.timeout) as e:
+        except (NetMikoAuthenticationException, NetMikoTimeoutException, 
+                NetmikoBaseException) as e:
             self.logger.error(f"Failed to connect to {self.config.ip_address}: {e}")
+            self.disconnect()
+            return False
+        except Exception as e:
+            self.logger.error(f"Unexpected error connecting to {self.config.ip_address}: {e}")
             self.disconnect()
             return False
     
     def disconnect(self) -> None:
         """Close SSH connection and clean up resources."""
         try:
-            if self.shell:
-                self.shell.close()
-                self.shell = None
-                self.logger.debug("Shell channel closed")
-                
-            if self.client:
-                self.client.close()
-                self.client = None
+            if self.connection:
+                self.connection.disconnect()
+                self.connection = None
                 self.logger.info(f"Disconnected from {self.config.ip_address}")
-            
-            # Clear command executor reference
-            self.command_executor = None
                 
         except Exception as e:
             self.logger.warning(f"Error during disconnect: {e}")
@@ -234,13 +140,13 @@ class SSHConnectionManager:
         Returns:
             True if connected, False otherwise
         """
-        if not self.client or not self.shell:
+        if not self.connection:
             return False
             
         try:
-            # Send a simple command to test connection
-            transport = self.client.get_transport()
-            return transport is not None and transport.is_active()
+            # Test connection with a simple command
+            self.connection.send_command("", expect_string=r'[>#]', read_timeout=5)
+            return True
         except Exception:
             return False
     
@@ -279,7 +185,7 @@ class SSHConnectionManager:
         self.disconnect()
     
     def execute_command(self, command: str, timeout: Optional[int] = None) -> CommandResponse:
-        """Execute a command on the firewall.
+        """Execute a command on the firewall using netmiko.
         
         Args:
             command: Command to execute
@@ -291,41 +197,142 @@ class SSHConnectionManager:
         Raises:
             ConnectionError: If not connected to firewall
         """
-        if not self.command_executor:
+        if not self.connection:
             raise ConnectionError("Not connected to firewall")
         
-        return self.command_executor.send_command(command, timeout)
+        self.logger.debug(f"Executing command: {command}")
+        
+        try:
+            # Execute command using netmiko
+            output = self.connection.send_command(
+                command,
+                read_timeout=timeout or 30,
+                expect_string=r'[>#]'
+            )
+            
+            # Update current mode after command execution
+            self.current_mode = self._detect_current_mode()
+            
+            # Analyze response for errors
+            success, error_message = self._analyze_response(output)
+            
+            response = CommandResponse(
+                command=command,
+                output=output,
+                success=success,
+                error_message=error_message,
+                mode=self.current_mode
+            )
+            
+            self.logger.debug(f"Command response - Success: {success}, Mode: {self.current_mode.value}")
+            if not success and error_message:
+                self.logger.warning(f"Command failed: {error_message}")
+                
+            return response
+            
+        except NetMikoTimeoutException:
+            error_msg = f"Command '{command}' timed out after {timeout or 30} seconds"
+            self.logger.error(error_msg)
+            return CommandResponse(
+                command=command,
+                output="",
+                success=False,
+                error_message=error_msg,
+                mode=self.current_mode
+            )
+        except Exception as e:
+            error_msg = f"Error executing command '{command}': {str(e)}"
+            self.logger.error(error_msg)
+            return CommandResponse(
+                command=command,
+                output="",
+                success=False,
+                error_message=error_msg,
+                mode=self.current_mode
+            )
+    
+    def _detect_current_mode(self) -> FirewallMode:
+        """Detect current firewall mode using netmiko's find_prompt method.
+        
+        Returns:
+            Detected firewall mode
+        """
+        if not self.connection:
+            return FirewallMode.UNKNOWN
+            
+        try:
+            # Get current prompt using netmiko
+            prompt = self.connection.find_prompt()
+            
+            # Analyze prompt to determine mode
+            self.logger.debug(f"Analyzing prompt: '{prompt}'")
+            
+            if '[Expert@' in prompt and ']#' in prompt:
+                self.logger.debug("Detected expert mode")
+                return FirewallMode.EXPERT
+            elif '>' in prompt:
+                self.logger.debug("Detected clish mode")
+                return FirewallMode.CLISH
+            else:
+                self.logger.debug(f"Unknown mode for prompt: '{prompt}'")
+                return FirewallMode.UNKNOWN
+                
+        except Exception as e:
+            self.logger.debug(f"Error detecting mode: {e}")
+            return FirewallMode.UNKNOWN
+    
+    def _analyze_response(self, output: str) -> tuple[bool, Optional[str]]:
+        """Analyze command response for success/failure indicators.
+        
+        Args:
+            output: Command output to analyze
+            
+        Returns:
+            Tuple of (success, error_message)
+        """
+        import re
+        
+        # Common Check Point error patterns
+        error_patterns = [
+            r'CLINFR\d+\s+(.+)',  # Check Point CLI error codes
+            r'Error:\s*(.+)',
+            r'Failed:\s*(.+)',
+            r'Invalid\s+(.+)',
+            r'command not found',
+            r'Permission denied',
+            r'Access denied',
+        ]
+        
+        # Check for error patterns
+        for pattern in error_patterns:
+            match = re.search(pattern, output, re.IGNORECASE | re.MULTILINE)
+            if match:
+                error_message = match.group(1) if match.groups() else match.group(0)
+                return False, error_message.strip()
+        
+        # If no errors found, consider it successful
+        return True, None
     
     def get_current_mode(self) -> FirewallMode:
         """Get current firewall mode.
         
         Returns:
             Current firewall mode
-            
-        Raises:
-            ConnectionError: If not connected to firewall
         """
-        if not self.command_executor:
-            raise ConnectionError("Not connected to firewall")
-        
-        return self.command_executor.get_current_mode()
+        # Refresh mode detection
+        self.current_mode = self._detect_current_mode()
+        return self.current_mode
     
     def detect_mode(self) -> FirewallMode:
-        """Detect current firewall mode by sending a test command.
+        """Detect current firewall mode by refreshing prompt.
         
         Returns:
             Detected firewall mode
-            
-        Raises:
-            ConnectionError: If not connected to firewall
         """
-        if not self.command_executor:
-            raise ConnectionError("Not connected to firewall")
-        
-        return self.command_executor.detect_mode()
+        return self._detect_current_mode()
     
     def wait_for_prompt(self, expected_prompt: str, timeout: int = 30) -> bool:
-        """Wait for a specific prompt pattern.
+        """Wait for a specific prompt pattern using netmiko.
         
         Args:
             expected_prompt: Regex pattern for expected prompt
@@ -333,168 +340,91 @@ class SSHConnectionManager:
             
         Returns:
             True if prompt detected within timeout
-            
-        Raises:
-            ConnectionError: If not connected to firewall
         """
-        if not self.command_executor:
-            raise ConnectionError("Not connected to firewall")
-        
-        return self.command_executor.wait_for_prompt(expected_prompt, timeout)
+        if not self.connection:
+            return False
+            
+        try:
+            # Use netmiko's read_until_prompt with custom pattern
+            self.connection.read_until_pattern(
+                pattern=expected_prompt,
+                read_timeout=timeout
+            )
+            return True
+        except Exception as e:
+            self.logger.debug(f"Timeout waiting for prompt '{expected_prompt}': {e}")
+            return False
     
     def enter_expert_mode(self, expert_password: str) -> bool:
-        """Enter expert mode with proper password handling and verification.
-        
-        This function implements requirement 1.7: WHEN expert password is set THEN the system 
-        SHALL be able to enter expert mode using "expert" command and password.
+        """Enter expert mode using netmiko's send_command_timing.
         
         Args:
             expert_password: Expert mode password
             
         Returns:
-            True if successfully entered expert mode and verified
-            
-        Raises:
-            ConnectionError: If not connected to firewall
+            True if successfully entered expert mode
         """
-        if not self.command_executor:
+        if not self.connection:
             raise ConnectionError("Not connected to firewall")
         
         self.logger.info("Attempting to enter expert mode")
         
-        # Ensure we're starting from clish mode
-        current_mode = self.get_current_mode()
-        if current_mode == FirewallMode.EXPERT:
+        # Check if already in expert mode
+        if self.get_current_mode() == FirewallMode.EXPERT:
             self.logger.info("Already in expert mode")
             return True
-        elif current_mode == FirewallMode.UNKNOWN:
-            # Try to detect current mode
-            current_mode = self.detect_mode()
-            if current_mode == FirewallMode.EXPERT:
-                self.logger.info("Already in expert mode (detected)")
-                return True
         
         try:
             # Send expert command and wait for password prompt
             self.logger.debug("Sending expert command")
-            self.shell.send("expert\n")
+            output = self.connection.send_command_timing("expert")
+            self.logger.debug(f"Expert command output: {output}")
             
-            # Wait for password prompt with improved detection
-            output = ""
-            start_time = time.time()
-            timeout = 5
-            password_sent = False
-            
-            while time.time() - start_time < timeout:
-                if self.shell.recv_ready():
-                    chunk = self.shell.recv(1024).decode('utf-8', errors='ignore')
-                    output += chunk
-                    self.logger.debug(f"Received chunk: '{chunk}'")
-                    
-                    # Check for password prompt
-                    if "Enter expert password:" in output and not password_sent:
-                        self.logger.debug("Password prompt detected, sending password")
-                        
-                        # Send password
-                        self.shell.send(expert_password + '\n')
-                        password_sent = True
-                        
-                        # Continue reading to get the response
-                        continue
-                    
-                    # Check for successful entry indicators after password was sent
-                    if password_sent:
-                        # Look for expert mode prompt pattern
-                        if "[Expert@" in output and "]#" in output:
-                            self.logger.debug("Expert mode prompt detected")
-                            break
-                        
-                        # Check for authentication failure
-                        if any(error in output.lower() for error in ["invalid", "denied", "incorrect", "failed"]):
-                            self.logger.error(f"Expert password authentication failed: {output}")
-                            return False
-                        
-                        # Check for warning message (this is normal)
-                        if "Warning! All configurations should be done through clish" in output:
-                            self.logger.debug("Expert mode warning message received (normal)")
-                            continue
-                            
+            # Check if password prompt appeared
+            if "enter expert password:" in output.lower():
+                # Send password directly using write_channel (no waiting)
+                self.logger.debug("Sending expert password")
+                self.connection.write_channel(expert_password + '\n')
+                
+                # Give it time to process the full expert mode output
+                time.sleep(2)
+                
+                # Read the output to see what happened
+                expert_output = self.connection.send_command_timing("")
+                self.logger.debug(f"Expert mode output: {expert_output}")
+                
+                self.logger.debug("Password sent successfully")
+                
+                # Verify we're in expert mode
+                if self._detect_current_mode() == FirewallMode.EXPERT:
+                    self.logger.info("Successfully entered expert mode")
+                    return True
                 else:
-                    time.sleep(0.1)
-            
-            # Verify we're in expert mode by checking current mode
-            if self._verify_expert_mode_entry():
-                self.logger.info("Successfully entered expert mode")
-                return True
+                    self.logger.error("Failed to verify expert mode entry")
+                    self.logger.debug(f"Current prompt after expert entry: {self.connection.find_prompt()}")
+                    return False
             else:
-                self.logger.error("Failed to verify expert mode entry")
+                self.logger.error(f"Unexpected response to expert command: {output}")
                 return False
                 
         except Exception as e:
             self.logger.error(f"Error entering expert mode: {e}")
             return False
     
-    def _verify_expert_mode_entry(self) -> bool:
-        """Verify that we successfully entered expert mode.
-        
-        Returns:
-            True if currently in expert mode
-        """
-        try:
-            # Send a newline to get current prompt
-            self.shell.send('\n')
-            time.sleep(0.5)
-            
-            # Read response and detect mode
-            if self.shell.recv_ready():
-                response = self.shell.recv(1024).decode('utf-8', errors='ignore')
-                detected_mode = self.command_executor.detect_mode(response)
-                
-                if detected_mode == FirewallMode.EXPERT:
-                    self.command_executor.current_mode = FirewallMode.EXPERT
-                    return True
-                    
-            # Fallback: try to detect mode without output
-            detected_mode = self.command_executor.detect_mode()
-            if detected_mode == FirewallMode.EXPERT:
-                self.command_executor.current_mode = FirewallMode.EXPERT
-                return True
-                
-            return False
-            
-        except Exception as e:
-            self.logger.debug(f"Error verifying expert mode entry: {e}")
-            return False
-    
     def exit_expert_mode(self) -> bool:
-        """Exit expert mode back to clish with proper verification.
-        
-        This function implements requirement 1.8: WHEN in expert mode THEN the system 
-        SHALL be able to exit back to clish using "exit" command.
+        """Exit expert mode back to clish using netmiko.
         
         Returns:
-            True if successfully exited expert mode and verified
-            
-        Raises:
-            ConnectionError: If not connected to firewall
+            True if successfully exited expert mode
         """
-        if not self.command_executor:
+        if not self.connection:
             raise ConnectionError("Not connected to firewall")
         
         # Check current mode
         current_mode = self.get_current_mode()
         if current_mode == FirewallMode.CLISH:
-            self.logger.debug("Already in clish mode, no need to exit expert mode")
+            self.logger.debug("Already in clish mode")
             return True
-        elif current_mode == FirewallMode.UNKNOWN:
-            # Try to detect current mode
-            current_mode = self.detect_mode()
-            if current_mode == FirewallMode.CLISH:
-                self.logger.debug("Already in clish mode (detected)")
-                return True
-            elif current_mode == FirewallMode.UNKNOWN:
-                self.logger.warning("Cannot determine current mode for exit operation")
-                return False
         
         if current_mode != FirewallMode.EXPERT:
             self.logger.debug("Not in expert mode, no need to exit")
@@ -503,31 +433,11 @@ class SSHConnectionManager:
         self.logger.info("Attempting to exit expert mode")
         
         try:
-            # Send exit command
-            self.logger.debug("Sending exit command")
-            self.shell.send("exit\n")
-            
-            # Wait for response and mode transition
-            output = ""
-            start_time = time.time()
-            timeout = 5
-            
-            while time.time() - start_time < timeout:
-                if self.shell.recv_ready():
-                    chunk = self.shell.recv(1024).decode('utf-8', errors='ignore')
-                    output += chunk
-                    self.logger.debug(f"Exit response chunk: '{chunk}'")
-                    
-                    # Look for clish mode prompt pattern
-                    if ">" in output and "[Expert@" not in output:
-                        self.logger.debug("Clish mode prompt detected")
-                        break
-                        
-                else:
-                    time.sleep(0.1)
+            # Send exit command using netmiko
+            self.connection.send_command_timing("exit")
             
             # Verify we're back in clish mode
-            if self._verify_clish_mode_entry():
+            if self._detect_current_mode() == FirewallMode.CLISH:
                 self.logger.info("Successfully exited expert mode to clish")
                 return True
             else:
@@ -536,36 +446,4 @@ class SSHConnectionManager:
                 
         except Exception as e:
             self.logger.error(f"Error exiting expert mode: {e}")
-            return False
-    
-    def _verify_clish_mode_entry(self) -> bool:
-        """Verify that we successfully returned to clish mode.
-        
-        Returns:
-            True if currently in clish mode
-        """
-        try:
-            # Send a newline to get current prompt
-            self.shell.send('\n')
-            time.sleep(0.5)
-            
-            # Read response and detect mode
-            if self.shell.recv_ready():
-                response = self.shell.recv(1024).decode('utf-8', errors='ignore')
-                detected_mode = self.command_executor.detect_mode(response)
-                
-                if detected_mode == FirewallMode.CLISH:
-                    self.command_executor.current_mode = FirewallMode.CLISH
-                    return True
-                    
-            # Fallback: try to detect mode without output
-            detected_mode = self.command_executor.detect_mode()
-            if detected_mode == FirewallMode.CLISH:
-                self.command_executor.current_mode = FirewallMode.CLISH
-                return True
-                
-            return False
-            
-        except Exception as e:
-            self.logger.debug(f"Error verifying clish mode entry: {e}")
             return False

@@ -1,5 +1,6 @@
 # Core dependencies for Check Point VM Automation
-paramiko>=2.11.0          # SSH client library
+netmiko>=4.2.0            # Network device SSH library with Check Point support
+paramiko>=2.11.0          # SSH client library (for compatibility)
 pyyaml>=6.0               # YAML configuration parsing
 dataclasses>=0.6          # Backport for Python < 3.7 (if needed)
 typing-extensions>=4.0.0  # Extended typing support

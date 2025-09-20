@@ -1,278 +1,189 @@
 """
-Expert password setup workflow for Check Point firewalls.
+Simple expert password manag        try:
+            # Try the expert command - use send_command_timing to handle different responses
+            output = self.ssh.connection.send_command_timing("expert")
+            
+            if "enter expert password:" in output.lower():
+                self.logger.info("Expert password is already set")
+                # Cancel the password prompt with Ctrl+C
+                self.ssh.connection.write_channel('\x03\n')
+                return True, "Expert password is already set"
+            elif "expert password has not been defined" in output.lower():
+                self.logger.info("Expert password is not set")
+                return False, "Expert password has not been defined"
+            else:
+                # Might already be in expert mode or other state
+                self.logger.debug(f"Unexpected expert command output: {output}")
+                return False, f"Could not determine expert password status from output: {output}"Point firewalls using netmiko.
+Clean, focused implementation without legacy complexity.
 """
 
 import logging
-import time
-from typing import Tuple, Optional
+from typing import Tuple
 
 from .ssh_connection import SSHConnectionManager
-from .command_executor import CommandResponse, FirewallMode
+from .command_executor import FirewallMode
 
 
 class ExpertPasswordManager:
-    """Manages expert password setup workflow for Check Point firewalls."""
+    """Simple expert password manager using only netmiko methods."""
     
     def __init__(self, ssh_manager: SSHConnectionManager):
-        """Initialize expert password manager.
-        
-        Args:
-            ssh_manager: Active SSH connection manager
-        """
-        self.ssh_manager = ssh_manager
+        """Initialize with SSH connection manager."""
+        self.ssh = ssh_manager
         self.logger = ssh_manager.logger
-        
-    def check_expert_password_status(self) -> Tuple[bool, str]:
-        """Check if expert password is already set by parsing 'expert' command output.
+    
+    def is_expert_password_set(self) -> Tuple[bool, str]:
+        """Check if expert password is already set.
         
         Returns:
             Tuple of (password_is_set, status_message)
         """
-        self.logger.info("Checking expert password status")
+        self.logger.info("Checking if expert password is set")
         
-        # Ensure we're in clish mode
-        current_mode = self.ssh_manager.get_current_mode()
-        if current_mode == FirewallMode.EXPERT:
-            self.logger.debug("Currently in expert mode, exiting to clish first")
-            if not self.ssh_manager.exit_expert_mode():
-                return False, "Failed to exit expert mode to check password status"
+        # Make sure we're in clish mode
+        if self.ssh.get_current_mode() == FirewallMode.EXPERT:
+            self.ssh.exit_expert_mode()
         
-        # Send expert command to check status
-        response = self.ssh_manager.execute_command("expert", timeout=5)
-        
-        if not response.success:
-            return False, f"Failed to execute expert command: {response.error_message}"
-        
-        output = response.output.lower()
-        
-        # Check for password not set indicator
-        if "expert password has not been defined" in output:
-            self.logger.info("Expert password is not set")
-            return False, "Expert password has not been defined"
-        
-        # Check for password prompt (indicates password is set)
-        if "enter expert password:" in output:
-            self.logger.info("Expert password is already set")
-            # Send Ctrl+C to cancel the password prompt
-            self.ssh_manager.shell.send('\x03')  # Ctrl+C
-            time.sleep(0.5)
-            # Send newline to get back to prompt
-            self.ssh_manager.shell.send('\n')
-            time.sleep(0.5)
-            return True, "Expert password is already set"
-        
-        # Check if we're already in expert mode (shouldn't happen but handle it)
-        if response.mode == FirewallMode.EXPERT:
-            self.logger.info("Already in expert mode, password was set")
-            return True, "Already in expert mode"
-        
-        # If we can't determine status, assume not set
-        self.logger.warning(f"Could not determine expert password status from output: {output[:200]}")
-        return False, "Could not determine expert password status"
+        try:
+            # Try the expert command - if password is set, it will prompt for password
+            output = self.ssh.connection.send_command_timing("expert")
+            
+            if "enter expert password:" in output.lower():
+                self.logger.info("Expert password is already set")
+                # Cancel the password prompt with Ctrl+C
+                self.ssh.connection.write_channel('\x03\n')
+                return True, "Expert password is already set"
+            elif "expert password has not been defined" in output.lower():
+                self.logger.info("Expert password is not set")
+                return False, "Expert password has not been defined"
+            else:
+                # Might already be in expert mode or other state
+                self.logger.debug(f"Unexpected expert command output: {output}")
+                return False, "Could not determine expert password status"
+                
+        except Exception as e:
+            self.logger.error(f"Error checking expert password status: {e}")
+            return False, f"Error checking status: {str(e)}"
     
-    def set_expert_password(self, new_password: str) -> Tuple[bool, str]:
-        """Set expert password using 'set expert-password' command.
+    def set_expert_password(self, password: str) -> bool:
+        """Set the expert password.
         
         Args:
-            new_password: New expert password to set
+            password: New expert password to set
             
         Returns:
-            Tuple of (success, status_message)
+            True if successful, False otherwise
         """
         self.logger.info("Setting expert password")
         
-        # Validate password length
-        if len(new_password) < 6:
-            return False, "Expert password must be at least 6 characters long"
+        if len(password) < 6:
+            self.logger.error("Password must be at least 6 characters")
+            return False
         
-        # Ensure we're in clish mode
-        current_mode = self.ssh_manager.get_current_mode()
-        if current_mode == FirewallMode.EXPERT:
-            self.logger.debug("Currently in expert mode, exiting to clish first")
-            if not self.ssh_manager.exit_expert_mode():
-                return False, "Failed to exit expert mode"
-        
-        # Acquire database lock first (always do this to be safe)
-        self.logger.info("Acquiring database lock before setting expert password")
-        lock_success, lock_message = self._acquire_database_lock()
-        if not lock_success:
-            return False, f"Failed to acquire database lock: {lock_message}"
-        
-        # Send the set expert-password command and handle the interactive prompts
-        self.logger.debug("Sending set expert-password command")
-        self.ssh_manager.shell.send("set expert-password\n")
-        
-        # Handle password prompts
-        success, message = self._handle_password_prompts(new_password)
-        if not success:
-            return False, message
-        
-        self.logger.info("Expert password set successfully")
-        return True, "Expert password set successfully"
-    
-    def _acquire_database_lock(self) -> Tuple[bool, str]:
-        """Acquire database lock using 'lock database override' command.
-        
-        Returns:
-            Tuple of (success, status_message)
-        """
-        self.logger.debug("Acquiring database lock")
-        
-        response = self.ssh_manager.execute_command("lock database override", timeout=5)
-        
-        if response.success:
-            self.logger.debug("Database lock acquired successfully")
-            return True, "Database lock acquired"
-        else:
-            self.logger.error(f"Failed to acquire database lock: {response.error_message}")
-            return False, response.error_message or "Failed to acquire database lock"
-    
-    def _handle_password_prompts(self, password: str) -> Tuple[bool, str]:
-        """Handle password prompts - bulletproof method that works.
-        
-        Your method works because it IGNORES detection and just sends both passwords.
-        Detection was the problem, not timing.
-        """
-        self.logger.debug("Using bulletproof method - ignore detection, just send passwords")
+        # Make sure we're in clish mode
+        if self.ssh.get_current_mode() == FirewallMode.EXPERT:
+            self.ssh.exit_expert_mode()
         
         try:
-            all_output = ""
+            # Step 1: Lock database
+            self.logger.debug("Locking database")
+            lock_response = self.ssh.execute_command("lock database override")
+            if not lock_response.success:
+                self.logger.warning("Database lock failed, continuing anyway")
             
-            # Step 1: Wait for first prompt and send password
-            start_time = time.time()
-            while time.time() - start_time < 10:
-                if self.ssh_manager.shell.recv_ready():
-                    chunk = self.ssh_manager.shell.recv(4096).decode('utf-8', errors='ignore')
-                    all_output += chunk
-                    self.logger.debug(f"Received: '{chunk}'")
-                    
-                    if "password" in chunk.lower() and ":" in chunk:
-                        self.logger.debug("First password prompt detected, sending password")
-                        self.ssh_manager.shell.send(password + '\n')
-                        break
-                else:
-                    time.sleep(0.1)
+                        # Step 2: Start password setup and check what prompt we get
+            self.logger.debug("Starting set expert-password")
+            output = self.ssh.connection.send_command_timing("set expert-password")
             
-            # Step 2: IGNORE DETECTION - just send password again
-            self.logger.debug("Sending password again (ignoring detection)")
-            time.sleep(0.5)
-            self.ssh_manager.shell.send(password + '\n')
+            # Check if we're being asked for current password (means password already exists)
+            if "enter current expert password:" in output.lower():
+                self.logger.warning("Expert password is already set")
+                # Send Ctrl+C to abort
+                self.ssh.connection.write_channel('\x03\n')
+                return False
             
-            # Step 3: Read all output
-            self.logger.debug("Reading final output")
-            time.sleep(0.5)
-            
-            read_count = 0
-            while read_count < 5:
-                if self.ssh_manager.shell.recv_ready():
-                    chunk = self.ssh_manager.shell.recv(4096).decode('utf-8', errors='ignore')
-                    all_output += chunk
-                    self.logger.debug(f"Final output: '{chunk}'")
-                    read_count += 1
-                else:
-                    break
-            
-            # If no prompt, press enter
-            if ">" not in all_output and "#" not in all_output:
-                self.logger.debug("No prompt seen, pressing enter")
-                self.ssh_manager.shell.send('\n')
-                time.sleep(0.5)
+            # Check if we get the "Enter new expert password:" prompt (password not set)
+            if "enter new expert password:" in output.lower():
+                self.logger.debug("Got 'Enter new expert password' prompt - proceeding")
                 
-                if self.ssh_manager.shell.recv_ready():
-                    chunk = self.ssh_manager.shell.recv(4096).decode('utf-8', errors='ignore')
-                    all_output += chunk
-                    self.logger.debug(f"After enter: '{chunk}'")
+                # Step 3: Send first password
+                self.logger.debug("Sending first password")
+                output += self.ssh.connection.send_command_timing(password, read_timeout=2)
+                
+                # Step 4: Send confirmation password  
+                self.logger.debug("Sending confirmation password")
+                output += self.ssh.connection.send_command_timing(password, read_timeout=2)
+            else:
+                self.logger.error(f"Unexpected response to set expert-password: {output}")
+                return False
             
-            self.logger.debug(f"Complete output: '{all_output}'")
+            # Step 5: Check result
+            if "error" in output.lower() or "failed" in output.lower():
+                self.logger.error(f"Password setup failed: {output}")
+                return False
             
-            if "error" in all_output.lower() or "failed" in all_output.lower():
-                return False, f"Password setup failed: {all_output}"
-            
-            return True, "Password setup completed"
+            self.logger.info("Expert password set successfully")
+            return True
             
         except Exception as e:
-            self.logger.error(f"Error: {e}")
-            return False, f"Error: {str(e)}"
+            self.logger.error(f"Error setting expert password: {e}")
+            return False
     
-    def setup_expert_password_workflow(self, expert_password: str) -> Tuple[bool, str]:
-        """Complete expert password setup workflow.
-        
-        This is the main function that orchestrates the entire expert password setup process:
-        1. Check if expert password is already set
-        2. If not set, set the expert password
-        3. Verify the password was set correctly
+    def verify_expert_password(self, password: str) -> bool:
+        """Verify expert password works by entering expert mode.
         
         Args:
-            expert_password: Expert password to set
+            password: Password to verify
             
         Returns:
-            Tuple of (success, status_message)
+            True if password works, False otherwise
+        """
+        self.logger.info("Verifying expert password")
+        
+        try:
+            # Try to enter expert mode
+            if self.ssh.enter_expert_mode(password):
+                self.logger.info("Expert password verified successfully")
+                # Exit back to clish
+                self.ssh.exit_expert_mode()
+                return True
+            else:
+                self.logger.error("Expert password verification failed")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error verifying expert password: {e}")
+            return False
+    
+    def setup_expert_password(self, password: str) -> Tuple[bool, str]:
+        """Complete expert password setup workflow.
+        
+        Args:
+            password: Expert password to set
+            
+        Returns:
+            Tuple of (success, message)
         """
         self.logger.info("Starting expert password setup workflow")
         
         try:
-            # Step 1: Check current expert password status
-            password_set, status_message = self.check_expert_password_status()
+            # Step 1: Check if already set
+            is_set, status_msg = self.is_expert_password_set()
+            if is_set:
+                return True, status_msg
             
-            if password_set:
-                self.logger.info("Expert password is already set, no action needed")
-                return True, "Expert password is already set"
+            # Step 2: Set the password
+            if not self.set_expert_password(password):
+                return False, "Failed to set expert password"
             
-            # Step 2: Set expert password
-            self.logger.info("Expert password not set, proceeding to set it")
-            set_success, set_message = self.set_expert_password(expert_password)
+            # Step 3: Verify it works
+            if not self.verify_expert_password(password):
+                return False, "Expert password was set but verification failed"
             
-            if not set_success:
-                return False, f"Failed to set expert password: {set_message}"
-            
-            # Step 3: Verify password was set by trying to enter expert mode
-            self.logger.info("Verifying expert password was set correctly")
-            verify_success, verify_message = self._verify_expert_password(expert_password)
-            
-            if not verify_success:
-                return False, f"Expert password verification failed: {verify_message}"
-            
-            self.logger.info("Expert password setup workflow completed successfully")
             return True, "Expert password setup completed successfully"
             
         except Exception as e:
-            error_message = f"Expert password setup workflow failed: {str(e)}"
-            self.logger.error(error_message)
-            return False, error_message
-    
-    def _verify_expert_password(self, expert_password: str) -> Tuple[bool, str]:
-        """Verify expert password was set correctly by attempting to enter expert mode.
-        
-        This method uses the improved enter_expert_mode and exit_expert_mode methods
-        that include proper verification of mode transitions.
-        
-        Args:
-            expert_password: Expert password to verify
-            
-        Returns:
-            Tuple of (success, status_message)
-        """
-        self.logger.debug("Verifying expert password by entering expert mode")
-        
-        try:
-            # Ensure we're in clish mode first
-            current_mode = self.ssh_manager.get_current_mode()
-            if current_mode == FirewallMode.EXPERT:
-                if not self.ssh_manager.exit_expert_mode():
-                    return False, "Failed to exit expert mode for verification"
-            
-            # Try to enter expert mode with the password (includes verification)
-            if self.ssh_manager.enter_expert_mode(expert_password):
-                self.logger.debug("Successfully entered expert mode, password verification passed")
-                
-                # Exit back to clish mode (includes verification)
-                if self.ssh_manager.exit_expert_mode():
-                    return True, "Expert password verified successfully"
-                else:
-                    return True, "Expert password verified (but failed to exit expert mode)"
-            else:
-                return False, "Failed to enter expert mode with provided password"
-                
-        except Exception as e:
-            self.logger.error(f"Error verifying expert password: {e}")
-            return False, f"Error during password verification: {str(e)}"
+            error_msg = f"Expert password setup failed: {str(e)}"
+            self.logger.error(error_msg)
+            return False, error_msg
