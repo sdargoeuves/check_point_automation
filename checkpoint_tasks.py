@@ -53,12 +53,12 @@ def task_set_expert_password(config: FirewallConfig) -> bool:
             else:
                 print(f"   ✗ Expert password setup failed: {setup_msg}")
                 return False
-             
-            print("\n=== Task: Expert Password Setup Successful! ===")
+
+            print("\n=== Task 1: Expert Password Setup Successful! ===")
             return True
             
     except Exception as e:
-        print(f"\n✗ Task: Expert Password Setup failed with exception: {e}")
+        print(f"\n✗ Task 1: Expert Password Setup failed with exception: {e}")
         import traceback
         traceback.print_exc()
         return False
