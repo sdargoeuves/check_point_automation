@@ -74,6 +74,7 @@ Examples:
     parser.add_argument('-l', '--log-level',
                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
                        default='INFO',
+                       type=str.upper,
                        help='Set logging level (default: INFO)')
     
     return parser
@@ -158,7 +159,7 @@ def main():
     
     # Set up logging with specified level
     logging.basicConfig(
-        level=getattr(logging, args.log_level),
+        level=getattr(logging, args.log_level.upper()),
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
     
@@ -184,7 +185,7 @@ def main():
         username=args.username,
         password=args.password,
         expert_password=args.expert_password,
-        logging_level=args.log_level
+        logging_level=args.log_level.upper()
     )
     
     # Run tasks

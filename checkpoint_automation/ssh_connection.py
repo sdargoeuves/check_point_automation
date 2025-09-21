@@ -321,13 +321,6 @@ class SSHConnectionManager:
         self.current_mode = self._detect_current_mode()
         return self.current_mode
     
-    def detect_mode(self) -> FirewallMode:
-        """Detect current firewall mode by refreshing prompt.
-        
-        Returns:
-            Detected firewall mode
-        """
-        return self._detect_current_mode()
     
     def wait_for_prompt(self, expected_prompt: str, timeout: int = 30) -> bool:
         """Wait for a specific prompt pattern using netmiko.
