@@ -35,8 +35,7 @@ def connect(config: FirewallConfig) -> SSHConnectionManager:
     print(f"🔗 Connecting to {config.ip_address}...")
     
     try:
-        ssh_manager = SSHConnectionManager(config, console_log_level="INFO")
-        return ssh_manager
+        return SSHConnectionManager(config)
         
     except Exception as e:
         print(f"❌ Connection error: {e}")
@@ -87,7 +86,7 @@ def task_set_expert_password(config: FirewallConfig) -> bool:
     try:
         # Use context manager pattern like fw_set_expert.py
         print(f"1. Connecting to firewall at {config.ip_address}...")
-        with SSHConnectionManager(config, console_log_level="INFO") as ssh_manager:
+        with SSHConnectionManager(config) as ssh_manager:
             print("   ✓ Connected successfully")
             
             # Detect initial mode
@@ -95,66 +94,15 @@ def task_set_expert_password(config: FirewallConfig) -> bool:
             print(f"   ✓ Initial mode detected: {initial_mode.value}")
             
             # Test expert password setup workflow (exactly like fw_set_expert.py)
-            print("\n2. Testing expert password setup workflow...")
+            print("\n2. Starting the workflow to setup expert password...")
             expert_mgr = ExpertPasswordManager(ssh_manager)
             
-            # Check current expert password status
-            password_set, status_msg = expert_mgr.is_expert_password_set()
-            print(f"   Expert password status: {status_msg}")
-            
-            if not password_set:
-                print("   Setting expert password...")
-                setup_success, setup_msg = expert_mgr.setup_expert_password(config.expert_password)
-                if setup_success:
-                    print(f"   ✓ Expert password setup: {setup_msg}")
-                else:
-                    print(f"   ✗ Expert password setup failed: {setup_msg}")
-                    return False
+            setup_success, setup_msg = expert_mgr.setup_expert_password(config.expert_password)
+            if setup_success:
+                print(f"   ✓ Expert password setup: {setup_msg}")
             else:
-                print("   ✓ Expert password already set")
-            
-                # Test expert mode entry
-                print("\n3. Testing expert password...")
-                current_mode = ssh_manager.get_current_mode()
-                print(f"   Current mode before entry: {current_mode.value}")
-                
-                entry_success = ssh_manager.enter_expert_mode(config.expert_password)
-                if entry_success:
-                    print("   ✓ Successfully entered expert mode")
-                    
-                    # Verify we're in expert mode
-                    current_mode = ssh_manager.get_current_mode()
-                    print(f"   Current mode after entry: {current_mode.value}")
-                    
-                    if current_mode.value == "expert":
-                        print("   ✓ Mode verification successful")
-                        print("\n=== Task: Expert Password already setup! ===")
-                        return True
-                    else:
-                        print(f"   ✗ Mode verification failed - expected expert, got {current_mode.value}")
-                        return False
-                else:
-                    print("   ✗ Failed to enter expert mode")
-                    return False
-            
-            # # Test expert mode exit
-            # print("\n4. Testing expert mode exit...")
-            # exit_success = ssh_manager.exit_expert_mode()
-            # if exit_success:
-            #     print("   ✓ Successfully exited expert mode")
-                
-            #     # Verify we're back in clish mode
-            #     current_mode = ssh_manager.get_current_mode()
-            #     print(f"   Current mode after exit: {current_mode.value}")
-                
-            #     if current_mode.value == "clish":
-            #         print("   ✓ Mode verification successful")
-            #     else:
-            #         print(f"   ✗ Mode verification failed - expected clish, got {current_mode.value}")
-            #         return False
-            # else:
-            #     print("   ✗ Failed to exit expert mode")
-            #     return False
+                print(f"   ✗ Expert password setup failed: {setup_msg}")
+                return False
              
             print("\n=== Task: Expert Password Setup Successful! ===")
             return True

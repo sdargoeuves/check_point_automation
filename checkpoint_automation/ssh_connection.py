@@ -17,16 +17,14 @@ from .command_executor import CommandResponse, FirewallMode
 class SSHConnectionManager:
     """Simplified SSH connection manager using netmiko for Check Point firewalls."""
     
-    def __init__(self, config: FirewallConfig, console_log_level: str = "INFO"):
+    def __init__(self, config: FirewallConfig):
         """Initialize SSH connection manager.
         
         Args:
-            config: Firewall configuration containing connection details
-            console_log_level: Log level for console output (DEBUG, INFO, WARNING, ERROR)
+            config: Firewall configuration containing connection details and logging level
         """
         self.config = config
         self.connection: Optional[ConnectHandler] = None
-        self.console_log_level = console_log_level
         self.logger = self._setup_logging()
         self.current_mode = FirewallMode.UNKNOWN
         
@@ -67,7 +65,7 @@ class SSHConnectionManager:
             
             # Set up console handler for important messages
             console_handler = logging.StreamHandler()
-            console_handler.setLevel(getattr(logging, self.console_log_level.upper()))
+            console_handler.setLevel(getattr(logging, self.config.logging_level.upper()))
             
             # Create formatter
             formatter = logging.Formatter(

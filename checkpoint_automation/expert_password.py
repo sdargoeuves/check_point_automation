@@ -186,16 +186,19 @@ class ExpertPasswordManager:
         self.logger.info("Starting expert password setup workflow")
         
         try:
-            # Step 1: Check if already set
+            # Check if expert password is already set
             is_set, status_msg = self.is_expert_password_set()
             if is_set:
+                # It is already set, check it works
+                if not self.verify_expert_password(password):
+                    return False, "Expert password was already set but verification failed"
                 return True, status_msg
             
-            # Step 2: Set the password
+            # Set the password
             if not self.set_expert_password(password):
                 return False, "Failed to set expert password"
             
-            # Step 3: Verify it works
+            # 3: Verify it works
             if not self.verify_expert_password(password):
                 return False, "Expert password was set but verification failed"
             

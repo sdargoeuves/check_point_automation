@@ -73,8 +73,8 @@ Examples:
     # Logging level
     parser.add_argument('-l', '--log-level',
                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-                       default='DEBUG',
-                       help='Set logging level (default: DEBUG)')
+                       default='INFO',
+                       help='Set logging level (default: INFO)')
     
     return parser
 
@@ -183,7 +183,8 @@ def main():
         ip_address=args.firewall_ip,
         username=args.username,
         password=args.password,
-        expert_password=args.expert_password
+        expert_password=args.expert_password,
+        logging_level=args.log_level
     )
     
     # Run tasks
