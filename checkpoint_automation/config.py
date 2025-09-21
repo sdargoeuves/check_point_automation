@@ -16,6 +16,9 @@ class FirewallConfig:
     expert_password: Optional[str] = None
     logging_level: str = "INFO" # Logging level for console output (DEBUG, INFO, WARNING, ERROR)
     script_content: Optional[str] = None
+    # Timeout configuration
+    timeout: int = 15          # Connection and command timeout in seconds
+    read_timeout: int = 3      # Read timeout for connection checks
     
     def __post_init__(self):
         """Validate configuration after initialization."""

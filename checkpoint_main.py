@@ -40,11 +40,12 @@ Examples:
   python checkpoint_main.py 10.194.59.200 --task 1
   python checkpoint_main.py 10.194.59.200 -t 2,3
   
-  # Custom credentials
+  # Custom credentials and timeouts
   python checkpoint_main.py 10.194.59.200 -u admin -p mypass -e myexpert --task 1,2
+  python checkpoint_main.py 10.194.59.200 --timeout 60 --read-timeout 10 --task 2
   
-  # Just copy files (skip expert password setup)
-  python checkpoint_main.py 10.194.59.200 --task 3
+  # Debug with extended timeouts
+  python checkpoint_main.py 10.194.59.200 --log-level debug --timeout 120 --task 1
         """
     )
     
@@ -76,6 +77,17 @@ Examples:
                        default='INFO',
                        type=str.upper,
                        help='Set logging level (default: INFO)')
+    
+    # Timeout configuration
+    parser.add_argument('--timeout',
+                       type=int,
+                       default=30,
+                       help='Connection and command timeout in seconds (default: 30)')
+    
+    parser.add_argument('--read-timeout',
+                       type=int,
+                       default=5,
+                       help='Quick read timeout for connection checks in seconds (default: 5)')
     
     return parser
 
@@ -159,7 +171,7 @@ def main():
     
     # Set up logging with specified level
     logging.basicConfig(
-        level=getattr(logging, args.log_level.upper()),
+        level=getattr(logging, args.log_level),
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
     
@@ -185,7 +197,9 @@ def main():
         username=args.username,
         password=args.password,
         expert_password=args.expert_password,
-        logging_level=args.log_level.upper()
+        logging_level=args.log_level,
+        timeout=args.timeout,
+        read_timeout=args.read_timeout
     )
     
     # Run tasks

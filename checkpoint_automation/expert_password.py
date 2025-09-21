@@ -46,8 +46,12 @@ class ExpertPasswordManager:
             self.ssh.exit_expert_mode()
         
         try:
-            # Try the expert command - if password is set, it will prompt for password
-            output = self.ssh.connection.send_command_timing("expert")
+            # Try the expert command - use faster timing for responsiveness
+            output = self.ssh.connection.send_command_timing(
+                "expert", 
+                last_read=1,
+                read_timeout=self.ssh.config.read_timeout,
+            )
             
             if "enter expert password:" in output.lower():
                 message = "Expert password is already set"
@@ -92,7 +96,11 @@ class ExpertPasswordManager:
             # Step 1: Lock database
             self.logger.debug("Locking database")
             try:
-                output_lock = self.ssh.connection.send_command_timing("lock database override", read_timeout=5)
+                output_lock = self.ssh.connection.send_command_timing(
+                    "lock database override",
+                    last_read=1,
+                    read_timeout=self.ssh.config.read_timeout
+                )
                 if "error" not in output_lock.lower():
                     self.logger.debug("Database lock acquired")
                 else:

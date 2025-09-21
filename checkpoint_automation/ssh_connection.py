@@ -28,16 +28,16 @@ class SSHConnectionManager:
         self.logger = self._setup_logging()
         self.current_mode = FirewallMode.UNKNOWN
         
-        # Device parameters for netmiko
+        # Device parameters for netmiko - use config timeout values
         self.device_params = {
             'device_type': 'checkpoint_gaia',
             'host': self.config.ip_address,
             'username': self.config.username,
             'password': self.config.password,
-            'timeout': 30,
-            'session_timeout': 30,
-            'read_timeout_override': 30,
-            'keepalive': 30,
+            'timeout': self.config.timeout,
+            'session_timeout': self.config.timeout,
+            'read_timeout_override': self.config.timeout,
+            'keepalive': self.config.timeout,
         }
         
     def _setup_logging(self) -> logging.Logger:
@@ -65,7 +65,7 @@ class SSHConnectionManager:
             
             # Set up console handler for important messages
             console_handler = logging.StreamHandler()
-            console_handler.setLevel(getattr(logging, self.config.logging_level.upper()))
+            console_handler.setLevel(getattr(logging, self.config.logging_level))
             
             # Create formatter
             formatter = logging.Formatter(
@@ -81,11 +81,11 @@ class SSHConnectionManager:
         
         return logger
     
-    def connect(self, timeout: int = 30) -> bool:
+    def connect(self, timeout: Optional[int] = None) -> bool:
         """Establish SSH connection to the firewall using netmiko.
         
         Args:
-            timeout: Connection timeout in seconds
+            timeout: Connection timeout in seconds (uses config.timeout if None)
             
         Returns:
             True if connection successful, False otherwise
@@ -93,11 +93,14 @@ class SSHConnectionManager:
         try:
             self.logger.info(f"Attempting to connect to {self.config.ip_address}")
             
+            # Use provided timeout or fall back to config timeout
+            actual_timeout = timeout or self.config.timeout
+            
             # Update timeout in device parameters
             self.device_params.update({
-                'timeout': timeout,
-                'session_timeout': timeout,
-                'read_timeout_override': timeout
+                'timeout': actual_timeout,
+                'session_timeout': actual_timeout,
+                'read_timeout_override': actual_timeout
             })
             
             # Create netmiko connection
@@ -143,7 +146,7 @@ class SSHConnectionManager:
             
         try:
             # Test connection with a simple command
-            self.connection.send_command("", expect_string=r'[>#]', read_timeout=5)
+            self.connection.send_command("", expect_string=r'[>#]', read_timeout=self.config.read_timeout)
             return True
         except Exception:
             return False
@@ -204,7 +207,7 @@ class SSHConnectionManager:
             # Execute command using netmiko
             output = self.connection.send_command(
                 command,
-                read_timeout=timeout or 30,
+                read_timeout=timeout or self.config.timeout,
                 expect_string=r'[>#]'
             )
             
@@ -229,7 +232,7 @@ class SSHConnectionManager:
             return response
             
         except NetMikoTimeoutException:
-            error_msg = f"Command '{command}' timed out after {timeout or 30} seconds"
+            error_msg = f"Command '{command}' timed out after {timeout or self.config.timeout} seconds"
             self.logger.error(error_msg)
             return CommandResponse(
                 command=command,
@@ -322,12 +325,12 @@ class SSHConnectionManager:
         return self.current_mode
     
     
-    def wait_for_prompt(self, expected_prompt: str, timeout: int = 30) -> bool:
+    def wait_for_prompt(self, expected_prompt: str, timeout: Optional[int] = None) -> bool:
         """Wait for a specific prompt pattern using netmiko.
         
         Args:
             expected_prompt: Regex pattern for expected prompt
-            timeout: Maximum time to wait
+            timeout: Maximum time to wait (uses config.timeout if None)
             
         Returns:
             True if prompt detected within timeout
@@ -339,7 +342,7 @@ class SSHConnectionManager:
             # Use netmiko's read_until_prompt with custom pattern
             self.connection.read_until_pattern(
                 pattern=expected_prompt,
-                read_timeout=timeout
+                read_timeout=timeout or self.config.timeout
             )
             return True
         except Exception as e:
