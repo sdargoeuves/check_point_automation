@@ -14,7 +14,7 @@ class FirewallConfig:
     username: str = "admin"
     password: str = "admin"
     expert_password: Optional[str] = None
-    logging_level: str = "INFO"
+    logging_level: str = "INFO" # Logging level for console output (DEBUG, INFO, WARNING, ERROR)
     script_content: Optional[str] = None
     
     def __post_init__(self):
