@@ -12,8 +12,8 @@ import argparse
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(__file__))
 
-from checkpoint_automation.config import FirewallConfig
-from checkpoint_tasks import (
+from checkpoint_utils.config import FirewallConfig
+from checkpoint_utils.tasks import (
     task_set_expert_password,
     task_create_vagrant_user,
     task_copy_binary

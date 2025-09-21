@@ -42,7 +42,7 @@ class SSHConnectionManager:
         
     def _setup_logging(self) -> logging.Logger:
         """Set up simplified logging configuration."""
-        logger = logging.getLogger(f"checkpoint_automation.ssh.{self.config.ip_address}")
+        logger = logging.getLogger(f"checkpoint_utils.ssh.{self.config.ip_address}")
         
         # Prevent propagation to root logger to avoid double logging
         logger.propagate = False

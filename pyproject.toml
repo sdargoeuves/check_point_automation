@@ -25,4 +25,4 @@ dependencies = [
 checkpoint-set-expert = "scripts.fw_set_expert:main"
 
 [tool.setuptools.packages.find]
-include = ["checkpoint_automation*", "scripts*"]
+include = ["checkpoint_utils*", "scripts*"]

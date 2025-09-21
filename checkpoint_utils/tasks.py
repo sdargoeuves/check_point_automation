@@ -7,11 +7,11 @@ Simplified functions for common CheckPoint firewall management operations.
 import logging
 from typing import Tuple, Optional
 
-from checkpoint_automation.config import FirewallConfig
-from checkpoint_automation.ssh_connection import SSHConnectionManager
-from checkpoint_automation.expert_password import ExpertPasswordManager
-from checkpoint_automation.user_management import UserManager
-from checkpoint_automation.command_executor import FirewallMode
+from .config import FirewallConfig
+from .ssh_connection import SSHConnectionManager
+from .expert_password import ExpertPasswordManager
+from .user_management import UserManager
+from .command_executor import FirewallMode
 
 logger = logging.getLogger(__name__)
 
