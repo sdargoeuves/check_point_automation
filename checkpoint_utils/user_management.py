@@ -145,12 +145,12 @@ class UserManager:
             )
             self.logger.debug(f"User check raw output length: {len(output)} chars")
             self.logger.debug(f"User check output repr: {repr(output)}")
-            
+
             # Check if output contains only the command echo (indicates incomplete response)
             if output.strip().endswith(command):
-                self.logger.warning(f"Output appears to be just command echo - possibly incomplete response")
+                self.logger.warning("Output appears to be just command echo - possibly incomplete response")
                 self.logger.warning(f"Expected to see response data after: '{command}'")
-            
+
             self.logger.debug(f"User check output: '{output}'")
 
             # Check if user exists based on output content
@@ -174,7 +174,9 @@ class UserManager:
                 return False
             else:
                 # Unclear output - assume user doesn't exist for safety
-                self.logger.warning(f"⚠️ Unclear output for user {username} check: '{output}' - assuming user does not exist")
+                self.logger.warning(
+                    f"⚠️ Unclear output for user {username} check: '{output}' - assuming user does not exist"
+                )
                 return False
 
         except Exception:

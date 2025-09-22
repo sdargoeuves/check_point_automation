@@ -152,7 +152,9 @@ def task_create_vagrant_user(config: FirewallConfig, username: str = "vagrant", 
             for cmd in clish_commands:
                 print(f"   Executing: {cmd}")
                 try:
-                    output = ssh_manager.connection.send_command_timing(cmd, read_timeout=config.timeout, last_read=config.last_read)
+                    output = ssh_manager.connection.send_command_timing(
+                        cmd, read_timeout=config.timeout, last_read=config.last_read
+                    )
                     print("   ✓ Command successful")
                 except Exception as e:
                     print(f"   ✗ Command failed: {cmd}")
@@ -176,7 +178,9 @@ def task_create_vagrant_user(config: FirewallConfig, username: str = "vagrant", 
             # Create SSH directory and set up keys using working patterns
             print(f"   Creating SSH directory for {username}...")
             try:
-                output = ssh_manager.connection.send_command(f"mkdir -p /home/{username}/.ssh", read_timeout=config.timeout)
+                output = ssh_manager.connection.send_command(
+                    f"mkdir -p /home/{username}/.ssh", read_timeout=config.timeout
+                )
                 print("   ✓ SSH directory created")
             except Exception as e:
                 print(f"   ✗ Failed to create SSH directory: {str(e)}")
@@ -211,17 +215,21 @@ def task_create_vagrant_user(config: FirewallConfig, username: str = "vagrant", 
 
             # Check user exists
             try:
-                output = ssh_manager.connection.send_command(f"grep {username} /etc/passwd", read_timeout=config.timeout)
+                output = ssh_manager.connection.send_command(
+                    f"grep {username} /etc/passwd", read_timeout=config.timeout
+                )
                 print(f"   ✓ User entry: {output.strip()}")
-            except Exception as e:
+            except Exception:
                 print(f"   ✗ {username} user not found in /etc/passwd")
                 return False
 
             # Check SSH directory
             try:
-                output = ssh_manager.connection.send_command(f"ls -la /home/{username}/.ssh/", read_timeout=config.timeout)
+                output = ssh_manager.connection.send_command(
+                    f"ls -la /home/{username}/.ssh/", read_timeout=config.timeout
+                )
                 print("   ✓ SSH directory contents verified")
-            except Exception as e:
+            except Exception:
                 print("   ✗ SSH directory not accessible")
                 return False
 

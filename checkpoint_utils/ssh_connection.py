@@ -2,7 +2,6 @@
 
 import logging
 import os
-import re
 import time
 from logging.handlers import RotatingFileHandler
 from typing import Optional
@@ -328,7 +327,9 @@ class SSHConnectionManager:
 
         try:
             # Send exit command using netmiko
-            self.connection.send_command_timing("exit", last_read=self.config.last_read, read_timeout=self.config.read_timeout)
+            self.connection.send_command_timing(
+                "exit", last_read=self.config.last_read, read_timeout=self.config.read_timeout
+            )
 
             # Verify we're back in clish mode
             if self._detect_current_mode() == FirewallMode.CLISH:
