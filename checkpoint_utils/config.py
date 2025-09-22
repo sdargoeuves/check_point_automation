@@ -12,14 +12,16 @@ class FirewallConfig:
     """Configuration class for firewall connection details."""
 
     ip_address: str
-    username: str = "admin"
-    password: str = "admin"
-    expert_password: Optional[str] = None
-    logging_level: str = "INFO"  # Logging level for console output (DEBUG, INFO, WARNING, ERROR)
+    # Required fields - defaults are provided by caller
+    username: str
+    password: str
+    timeout: int
+    read_timeout: int
+    last_read: int
+    logging_level: str
+    expert_password: str
+    # Optional fields
     script_content: Optional[str] = None
-    # Timeout configuration
-    timeout: int = 15  # Connection and command timeout in seconds
-    read_timeout: int = 3  # Read timeout for connection checks
 
     def __post_init__(self):
         """Validate configuration after initialization."""

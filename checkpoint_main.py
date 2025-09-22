@@ -77,24 +77,31 @@ Examples:
         "-l",
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        default="INFO",
+        default="WARNING",
         type=str.upper,
-        help="Set logging level (default: INFO)",
+        help="Set logging level (default: WARNING)",
     )
 
     # Timeout configuration
     parser.add_argument(
         "--timeout",
         type=int,
-        default=30,
-        help="Connection and command timeout in seconds (default: 30)",
+        default=15,
+        help="Connection and command timeout in seconds (default: 15)",
     )
 
     parser.add_argument(
         "--read-timeout",
         type=int,
         default=5,
-        help="Quick read timeout for connection checks in seconds (default: 5)",
+        help="Read timeout for connection checks in seconds (default: 5)",
+    )
+
+    parser.add_argument(
+        "--last-read",
+        type=int,
+        default=1,
+        help="Last read timeout for connection checks in seconds (default: 1)",
     )
 
     return parser
@@ -153,7 +160,7 @@ def run_tasks(config: FirewallConfig, task_list: list) -> bool:
 
     # Print summary
     print("\n" + "=" * 70)
-    print("� EXECUTION SUMMARY")
+    print("📝 EXECUTION SUMMARY")
     print("=" * 70)
 
     for i, task_num in enumerate(task_list):
@@ -210,6 +217,7 @@ def main():
         logging_level=args.log_level,
         timeout=args.timeout,
         read_timeout=args.read_timeout,
+        last_read=args.last_read,
     )
 
     # Run tasks

@@ -151,7 +151,7 @@ def task_create_vagrant_user(config: FirewallConfig, username: str = "vagrant", 
 
             for cmd in clish_commands:
                 print(f"   Executing: {cmd}")
-                result = ssh_manager.execute_command(cmd, timeout=30)
+                result = ssh_manager.execute_command(cmd, timeout=config.timeout)
                 if not result.success:
                     print(f"   ✗ Command failed: {cmd}")
                     print(f"     Error: {result.error_message}")
@@ -174,7 +174,7 @@ def task_create_vagrant_user(config: FirewallConfig, username: str = "vagrant", 
 
             # Create SSH directory and set up keys using working patterns
             print(f"   Creating SSH directory for {username}...")
-            result = ssh_manager.execute_command(f"mkdir -p /home/{username}/.ssh", timeout=10)
+            result = ssh_manager.execute_command(f"mkdir -p /home/{username}/.ssh", timeout=config.timeout)
             if not result.success:
                 print(f"   ✗ Failed to create SSH directory: {result.error_message}")
                 return False
@@ -196,7 +196,7 @@ def task_create_vagrant_user(config: FirewallConfig, username: str = "vagrant", 
 
             for cmd in permission_commands:
                 print(f"   Executing: {cmd}")
-                result = ssh_manager.execute_command(cmd, timeout=10)
+                result = ssh_manager.execute_command(cmd, timeout=config.timeout)
                 if not result.success:
                     print(f"   ✗ Command failed: {cmd}")
                     print(f"     Error: {result.error_message}")
@@ -207,7 +207,7 @@ def task_create_vagrant_user(config: FirewallConfig, username: str = "vagrant", 
             print(f"\n □ Verifying {username} user setup...")
 
             # Check user exists
-            result = ssh_manager.execute_command(f"grep {username} /etc/passwd", timeout=10)
+            result = ssh_manager.execute_command(f"grep {username} /etc/passwd", timeout=config.timeout)
             if result.success:
                 print(f"   ✓ User entry: {result.output.strip()}")
             else:
@@ -215,7 +215,7 @@ def task_create_vagrant_user(config: FirewallConfig, username: str = "vagrant", 
                 return False
 
             # Check SSH directory
-            result = ssh_manager.execute_command(f"ls -la /home/{username}/.ssh/", timeout=10)
+            result = ssh_manager.execute_command(f"ls -la /home/{username}/.ssh/", timeout=config.timeout)
             if result.success:
                 print("   ✓ SSH directory contents verified")
             else:

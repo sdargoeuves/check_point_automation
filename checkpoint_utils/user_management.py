@@ -25,8 +25,10 @@ class UserManager:
         Args:
             ssh_manager: Connected SSH manager
         """
-        self.ssh_manager = ssh_manager
-        logger.debug("UserManager initialized")
+
+        self.ssh = ssh_manager
+        self.logger = ssh_manager.logger
+        self.logger.debug("UserManager initialized")
 
     def set_user_password(self, username: str, password: str) -> bool:
         """
@@ -40,44 +42,44 @@ class UserManager:
             True if password was set successfully, False otherwise
         """
         try:
-            logger.debug(f"Setting password for user: {username}")
+            self.logger.debug(f"Setting password for user: {username}")
 
             # Use write_channel approach that works reliably
-            self.ssh_manager.connection.write_channel(f"set user {username} password\n")
+            self.ssh.connection.write_channel(f"set user {username} password\n")
             time.sleep(1)
 
             # Read initial output
-            output = self.ssh_manager.connection.read_channel()
-            logger.debug(f"Password prompt output: {output}")
+            output = self.ssh.connection.read_channel()
+            self.logger.debug(f"Password prompt output: {output}")
 
             # Check for password prompt
             if "new password:" in output.lower() or "password:" in output.lower():
                 # Send first password
-                self.ssh_manager.connection.write_channel(f"{password}\n")
+                self.ssh.connection.write_channel(f"{password}\n")
                 time.sleep(1)
 
                 # Send confirmation password
-                self.ssh_manager.connection.write_channel(f"{password}\n")
+                self.ssh.connection.write_channel(f"{password}\n")
                 time.sleep(2)
 
                 # Read final result
-                final_output = self.ssh_manager.connection.read_channel()
-                logger.debug(f"Password setting result: {final_output}")
+                final_output = self.ssh.connection.read_channel()
+                self.logger.debug(f"Password setting result: {final_output}")
 
                 # Check for errors
                 combined_output = output + final_output
                 if "error" in combined_output.lower() or "failed" in combined_output.lower():
-                    logger.error(f"Error setting password for {username}: {combined_output}")
+                    self.logger.error(f"Error setting password for {username}: {combined_output}")
                     return False
 
-                logger.info(f"Password set successfully for user: {username}")
+                self.logger.info(f"Password set successfully for user: {username}")
                 return True
             else:
-                logger.error(f"No password prompt detected for {username}: {output}")
+                self.logger.error(f"No password prompt detected for {username}: {output}")
                 return False
 
         except Exception:
-            logger.exception(f"Exception setting password for {username}")
+            self.logger.exception(f"Exception setting password for {username}")
             return False
 
     def setup_ssh_key(self, username: str, public_key: str) -> bool:
@@ -92,29 +94,29 @@ class UserManager:
             True if SSH key was configured successfully, False otherwise
         """
         try:
-            logger.debug(f"Setting up SSH key for user: {username}")
+            self.logger.debug(f"Setting up SSH key for user: {username}")
 
             # Use heredoc approach that works reliably (from vagrant script)
-            self.ssh_manager.connection.write_channel(f"cat > /home/{username}/.ssh/authorized_keys << 'EOF'\n")
+            self.ssh.connection.write_channel(f"cat > /home/{username}/.ssh/authorized_keys << 'EOF'\n")
             time.sleep(0.5)
-            self.ssh_manager.connection.write_channel(f"{public_key}\n")
+            self.ssh.connection.write_channel(f"{public_key}\n")
             time.sleep(0.5)
-            self.ssh_manager.connection.write_channel("EOF\n")
+            self.ssh.connection.write_channel("EOF\n")
             time.sleep(1)
 
             # Read output to check for errors
-            output = self.ssh_manager.connection.read_channel()
-            logger.debug(f"SSH key setup output: {output}")
+            output = self.ssh.connection.read_channel()
+            self.logger.debug(f"SSH key setup output: {output}")
 
             if "error" in output.lower() or "failed" in output.lower():
-                logger.error(f"Error setting up SSH key for {username}: {output}")
+                self.logger.error(f"Error setting up SSH key for {username}: {output}")
                 return False
 
-            logger.info(f"SSH key configured successfully for user: {username}")
+            self.logger.info(f"SSH key configured successfully for user: {username}")
             return True
 
         except Exception:
-            logger.exception(f"Exception setting up SSH key for {username}")
+            self.logger.exception(f"Exception setting up SSH key for {username}")
             return False
 
     def user_exists(self, username: str) -> bool:
@@ -130,45 +132,53 @@ class UserManager:
             - info: User information if exists, or empty string if not
         """
         try:
-            logger.debug(f"Checking if user exists: {username}")
+            self.logger.debug(f"Checking if user exists: {username}")
 
             # Use the SSH manager's execute_command method
             command = f"show user {username}"
-            logger.debug(f"Executing user check command: {command}")
+            self.logger.debug(f"Executing user check command: {command}")
 
-            result = self.ssh_manager.execute_command(command, timeout=15)
+            result = self.ssh.execute_command(command, use_timing=True)
 
             if not result.success:
-                logger.error(f"Command failed: {result.error_message}")
+                self.logger.error(f"Command failed: {result.error_message}")
                 return False
 
             output = result.output
-            logger.debug(f"User check raw output length: {len(output)} chars")
-            logger.debug(f"User check output: '{output}'")
+            self.logger.debug(f"User check raw output length: {len(output)} chars")
+            self.logger.debug(f"User check output repr: {repr(output)}")
+            
+            # Check if output contains only the command echo (indicates incomplete response)
+            if output.strip().endswith(command):
+                self.logger.warning(f"Output appears to be just command echo - possibly incomplete response")
+                self.logger.warning(f"Expected to see response data after: '{command}'")
+            
+            self.logger.debug(f"User check output: '{output}'")
 
             # Check if user exists based on output content
             # Look for the user's home directory pattern which indicates user exists
             home_dir_pattern = f"/home/{username}"
-            logger.debug(f"Looking for home directory pattern: '{home_dir_pattern}'")
+            self.logger.debug(f"##DEBUG## Looking for home directory pattern: '{home_dir_pattern}'")
+            self.logger.debug(f"##DEBUG## in the output:\n{output}")
 
             if home_dir_pattern in output:
                 # User exists - found home directory pattern
-                logger.info(f"✓ User {username} EXISTS - found home directory pattern: {home_dir_pattern}")
+                self.logger.info(f"✓ User {username} EXISTS - found home directory pattern: {home_dir_pattern}")
                 # Additional user details could be extracted here if needed
                 return True
             elif "No database items for user" in output:
                 # User does not exist - explicit message
-                logger.info(f"∅ User {username} does NOT exist - output contains 'No database items for user'")
+                self.logger.info(f"∅ User {username} does NOT exist - output contains 'No database items for user'")
                 return False
             elif output.strip() == "":
                 # Empty output also means user doesn't exist
-                logger.info(f"∅ User {username} does NOT exist - empty output")
+                self.logger.info(f"∅ User {username} does NOT exist - empty output")
                 return False
             else:
                 # Unclear output - assume user doesn't exist for safety
-                logger.warning(f"⚠️ Unclear output for user {username} check: '{output}' - assuming user does not exist")
+                self.logger.warning(f"⚠️ Unclear output for user {username} check: '{output}' - assuming user does not exist")
                 return False
 
         except Exception:
-            logger.exception(f"Exception checking user existence for {username}")
+            self.logger.exception(f"Exception checking user existence for {username}")
             return False, ""
