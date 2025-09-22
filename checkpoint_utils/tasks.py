@@ -151,12 +151,13 @@ def task_create_vagrant_user(config: FirewallConfig, username: str = "vagrant", 
 
             for cmd in clish_commands:
                 print(f"   Executing: {cmd}")
-                result = ssh_manager.execute_command(cmd, timeout=config.timeout)
-                if not result.success:
+                try:
+                    output = ssh_manager.connection.send_command_timing(cmd, read_timeout=config.timeout, last_read=config.last_read)
+                    print("   ✓ Command successful")
+                except Exception as e:
                     print(f"   ✗ Command failed: {cmd}")
-                    print(f"     Error: {result.error_message}")
+                    print(f"     Error: {str(e)}")
                     return False
-                print("   ✓ Command successful")
 
             # Set user password using UserManager
             print(f"\n □ Setting {username} user password...")
@@ -174,11 +175,12 @@ def task_create_vagrant_user(config: FirewallConfig, username: str = "vagrant", 
 
             # Create SSH directory and set up keys using working patterns
             print(f"   Creating SSH directory for {username}...")
-            result = ssh_manager.execute_command(f"mkdir -p /home/{username}/.ssh", timeout=config.timeout)
-            if not result.success:
-                print(f"   ✗ Failed to create SSH directory: {result.error_message}")
+            try:
+                output = ssh_manager.connection.send_command(f"mkdir -p /home/{username}/.ssh", read_timeout=config.timeout)
+                print("   ✓ SSH directory created")
+            except Exception as e:
+                print(f"   ✗ Failed to create SSH directory: {str(e)}")
                 return False
-            print("   ✓ SSH directory created")
 
             # Set up SSH key using UserManager
             print("   Installing SSH public key...")
@@ -196,29 +198,30 @@ def task_create_vagrant_user(config: FirewallConfig, username: str = "vagrant", 
 
             for cmd in permission_commands:
                 print(f"   Executing: {cmd}")
-                result = ssh_manager.execute_command(cmd, timeout=config.timeout)
-                if not result.success:
+                try:
+                    output = ssh_manager.connection.send_command(cmd, read_timeout=config.timeout)
+                    print("   ✓ Command successful")
+                except Exception as e:
                     print(f"   ✗ Command failed: {cmd}")
-                    print(f"     Error: {result.error_message}")
+                    print(f"     Error: {str(e)}")
                     return False
-                print("   ✓ Command successful")
 
             # Verify setup
             print(f"\n □ Verifying {username} user setup...")
 
             # Check user exists
-            result = ssh_manager.execute_command(f"grep {username} /etc/passwd", timeout=config.timeout)
-            if result.success:
-                print(f"   ✓ User entry: {result.output.strip()}")
-            else:
+            try:
+                output = ssh_manager.connection.send_command(f"grep {username} /etc/passwd", read_timeout=config.timeout)
+                print(f"   ✓ User entry: {output.strip()}")
+            except Exception as e:
                 print(f"   ✗ {username} user not found in /etc/passwd")
                 return False
 
             # Check SSH directory
-            result = ssh_manager.execute_command(f"ls -la /home/{username}/.ssh/", timeout=config.timeout)
-            if result.success:
+            try:
+                output = ssh_manager.connection.send_command(f"ls -la /home/{username}/.ssh/", read_timeout=config.timeout)
                 print("   ✓ SSH directory contents verified")
-            else:
+            except Exception as e:
                 print("   ✗ SSH directory not accessible")
                 return False
 

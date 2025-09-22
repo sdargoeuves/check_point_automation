@@ -68,12 +68,15 @@ class ScriptDeployment:
             time.sleep(1)
 
             # Verify file was created
-            verify_response = self.ssh.execute_command(f"ls -la {remote_file_path}")
-            if verify_response.success and remote_file_path in verify_response.output:
-                self.logger.info(f"File deployed successfully to {remote_file_path}")
-                return True, "File deployed successfully"
-            else:
-                return False, "File deployment verification failed"
+            try:
+                output = self.ssh.connection.send_command(f"ls -la {remote_file_path}")
+                if remote_file_path in output:
+                    self.logger.info(f"File deployed successfully to {remote_file_path}")
+                    return True, "File deployed successfully"
+                else:
+                    return False, "File deployment verification failed"
+            except Exception as e:
+                return False, f"File deployment verification failed: {str(e)}"
 
         except Exception as e:
             error_msg = f"Error deploying file: {str(e)}"
@@ -118,26 +121,27 @@ class ScriptDeployment:
 
             # Decode the base64 file to binary
             decode_cmd = f"base64 -d {temp_b64_file} > {remote_file_path}"
-            decode_response = self.ssh.execute_command(decode_cmd)
-
-            if not decode_response.success:
-                return (
-                    False,
-                    f"Failed to decode base64 file: {decode_response.error_message}",
-                )
+            try:
+                self.ssh.connection.send_command(decode_cmd)
+            except Exception as e:
+                return False, f"Failed to decode base64 file: {str(e)}"
 
             # Clean up temporary file
-            cleanup_response = self.ssh.execute_command(f"rm -f {temp_b64_file}")
-            if not cleanup_response.success:
-                self.logger.warning(f"Failed to clean up temporary file: {temp_b64_file}")
+            try:
+                self.ssh.connection.send_command(f"rm -f {temp_b64_file}")
+            except Exception as e:
+                self.logger.warning(f"Failed to clean up temporary file {temp_b64_file}: {str(e)}")
 
             # Verify binary file
-            verify_response = self.ssh.execute_command(f"ls -la {remote_file_path}")
-            if verify_response.success and remote_file_path in verify_response.output:
-                self.logger.info(f"Binary file deployed successfully to {remote_file_path}")
-                return True, "Binary file deployed successfully"
-            else:
-                return False, "Binary file deployment verification failed"
+            try:
+                output = self.ssh.connection.send_command(f"ls -la {remote_file_path}")
+                if remote_file_path in output:
+                    self.logger.info(f"Binary file deployed successfully to {remote_file_path}")
+                    return True, "Binary file deployed successfully"
+                else:
+                    return False, "Binary file deployment verification failed"
+            except Exception as e:
+                return False, f"Binary file deployment verification failed: {str(e)}"
 
         except Exception as e:
             error_msg = f"Error deploying binary file: {str(e)}"

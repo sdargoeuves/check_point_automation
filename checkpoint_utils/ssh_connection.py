@@ -14,7 +14,7 @@ from netmiko import (
 )
 from netmiko.exceptions import NetmikoBaseException
 
-from .command_executor import CommandResponse, FirewallMode
+from .command_executor import FirewallMode
 from .config import FirewallConfig
 
 
@@ -149,8 +149,7 @@ class SSHConnectionManager:
 
         try:
             # Test connection with a simple command
-            # self.connection.send_command("", expect_string=r"[>#]", read_timeout=self.config.read_timeout)
-            self.execute_command("", expect_string=r"[>#]", read_timeout=self.config.read_timeout)
+            self.connection.send_command("", expect_string=r"[>#]", read_timeout=self.config.read_timeout)
             return True
         except Exception:
             return False
@@ -189,100 +188,6 @@ class SSHConnectionManager:
         """Context manager exit."""
         self.disconnect()
 
-    def execute_command(self, command: str, use_timing: bool = False, timeout: Optional[int] = None) -> CommandResponse:
-        """Execute a command on the firewall using netmiko.
-
-        Args:
-            command: Command to execute
-            use_timing: If True, uses send_command_timing; if False, uses send_command
-            timeout: Command timeout in seconds
-
-        Returns:
-            CommandResponse object with results
-
-        Raises:
-            ConnectionError: If not connected to firewall
-        """
-        if not self.connection:
-            raise ConnectionError("Not connected to firewall")
-
-        method_name = "send_command_timing" if use_timing else "send_command"
-        self.logger.debug(f"Executing command using {method_name}: {command}")
-
-        try:
-            # Execute command using appropriate netmiko method
-            self.logger.debug(f"About to {method_name}: '{command}'")
-            
-            if use_timing:
-                output = self.connection.send_command_timing(
-                    command,
-                    last_read=self.config.last_read,
-                    read_timeout=timeout or self.config.read_timeout,
-                )
-            else:
-                output = self.connection.send_command(
-                    command,
-                    read_timeout=timeout or self.config.read_timeout,
-                    # expect_string could be re-enabled if needed for send_command
-                )
-            
-            self.logger.debug(f"Raw output received (length: {len(output)}): '{output}'")
-
-            # Common post-processing for both methods
-            return self._process_command_response(command, output)
-
-        except NetMikoTimeoutException:
-            error_msg = f"Command '{command}' timed out after {timeout or self.config.read_timeout} seconds"
-            self.logger.error(error_msg)
-            return CommandResponse(
-                command=command,
-                output="",
-                success=False,
-                error_message=error_msg,
-                mode=self.current_mode,
-            )
-        except Exception as e:
-            error_msg = f"Error executing command '{command}': {str(e)}"
-            self.logger.error(error_msg)
-            return CommandResponse(
-                command=command,
-                output="",
-                success=False,
-                error_message=error_msg,
-                mode=self.current_mode,
-            )
-
-    def _process_command_response(self, command: str, output: str) -> CommandResponse:
-        """Process command output and create response object.
-        
-        Args:
-            command: The command that was executed
-            output: The raw output from the command
-            
-        Returns:
-            CommandResponse object with processed results
-        """
-        # Update current mode after command execution
-        self.current_mode = self._detect_current_mode()
-
-        # Analyze response for errors
-        success, error_message = self._analyze_response(output)
-
-        response = CommandResponse(
-            command=command,
-            output=output,
-            success=success,
-            error_message=error_message,
-            mode=self.current_mode,
-        )
-
-        self.logger.debug(f"Command response - Success: {success}, Mode: {self.current_mode.value}")
-        if not success and error_message:
-            self.logger.warning(f"Command failed: {error_message}")
-
-        return response
-
-
     def _detect_current_mode(self) -> FirewallMode:
         """Detect current firewall mode using netmiko's find_prompt method.
 
@@ -312,36 +217,6 @@ class SSHConnectionManager:
         except Exception as e:
             self.logger.debug(f"Error detecting mode: {e}")
             return FirewallMode.UNKNOWN
-
-    def _analyze_response(self, output: str) -> tuple[bool, Optional[str]]:
-        """Analyze command response for success/failure indicators.
-
-        Args:
-            output: Command output to analyze
-
-        Returns:
-            Tuple of (success, error_message)
-        """
-        # Common Check Point error patterns
-        error_patterns = [
-            r"CLINFR\d+\s+(.+)",  # Check Point CLI error codes
-            r"Error:\s*(.+)",
-            r"Failed:\s*(.+)",
-            r"Invalid\s+(.+)",
-            r"command not found",
-            r"Permission denied",
-            r"Access denied",
-        ]
-
-        # Check for error patterns
-        for pattern in error_patterns:
-            match = re.search(pattern, output, re.IGNORECASE | re.MULTILINE)
-            if match:
-                error_message = match.group(1) if match.groups() else match.group(0)
-                return False, error_message.strip()
-
-        # If no errors found, consider it successful
-        return True, None
 
     def get_current_mode(self) -> FirewallMode:
         """Get current firewall mode.
@@ -397,8 +272,6 @@ class SSHConnectionManager:
             # Send expert command and wait for password prompt
             self.logger.debug("Sending expert command")
             output = self.connection.send_command_timing("expert")
-            # cmd = self.execute_command("expert", use_timing=True)
-            # output = cmd.output
             self.logger.debug(f"Expert command output: {output}")
 
             # Check if password prompt appeared
@@ -412,7 +285,6 @@ class SSHConnectionManager:
 
                 # Read the output to see what happened
                 expert_output = self.connection.send_command_timing("")
-                # expert_output = self.execute_command("", use_timing=True)
                 self.logger.debug(f"Expert mode output: {expert_output}")
 
                 self.logger.debug("Password sent successfully")
@@ -456,8 +328,7 @@ class SSHConnectionManager:
 
         try:
             # Send exit command using netmiko
-            self.connection.send_command_timing("exit")
-            # self.execute_command("exit", use_timing=True)
+            self.connection.send_command_timing("exit", last_read=self.config.last_read, read_timeout=self.config.read_timeout)
 
             # Verify we're back in clish mode
             if self._detect_current_mode() == FirewallMode.CLISH:

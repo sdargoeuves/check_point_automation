@@ -134,17 +134,15 @@ class UserManager:
         try:
             self.logger.debug(f"Checking if user exists: {username}")
 
-            # Use the SSH manager's execute_command method
+            # Use direct netmiko method for user check
             command = f"show user {username}"
             self.logger.debug(f"Executing user check command: {command}")
 
-            result = self.ssh.execute_command(command, use_timing=True)
-
-            if not result.success:
-                self.logger.error(f"Command failed: {result.error_message}")
-                return False
-
-            output = result.output
+            output = self.ssh.connection.send_command_timing(
+                command,
+                last_read=self.ssh.config.last_read,
+                read_timeout=self.ssh.config.read_timeout,
+            )
             self.logger.debug(f"User check raw output length: {len(output)} chars")
             self.logger.debug(f"User check output repr: {repr(output)}")
             
