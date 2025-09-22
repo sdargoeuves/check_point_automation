@@ -22,6 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
+cp_automate = "checkpoint_utils.cli:main"
 checkpoint-set-expert = "scripts.fw_set_expert:main"
 
 [tool.setuptools.packages.find]
